@@ -76,13 +76,6 @@ def main():
         cflags.append('-DTRACE_PYMEM_RAW')
     if not DEBUG:
         cflags.append('-DNDEBUG')
-    if hasattr(pythonapi, '_PyFreeList_SetAllocators'):
-        print("_PyFreeList_SetAllocators: present, track free lists")
-        cflags.append('-DWITH_FREE_LIST')
-    elif hasattr(pythonapi, '_PySys_UseFreeList'):
-        print("_PySys_UseFreeList: present, free lists are disabled")
-    else:
-        print("_PyFreeList_SetAllocators, _PySys_UseFreeList: missing, free lists are used but not tracked")
 
     with open('README.rst') as f:
         long_description = f.read().strip()
