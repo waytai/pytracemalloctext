@@ -55,6 +55,59 @@
 #  include <Psapi.h>
 #endif
 
+#if PY_MAJOR_VERSION >= 3
+# define PYTHON3
+#endif
+
+#if defined(PYTHON3) || (PY_MAJOR_VERSION >= 2 && PY_MINOR_VERSION >= 7)
+#  define PYINT_FROM_SSIZE_T PyLong_FromSize_t
+#else
+#  define PYINT_FROM_SSIZE_T PyInt_FromSize_t
+#endif
+
+#if PY_MAJOR_VERSION >= 3 && PY_MINOR_VERSION >= 3
+#  define PEP393
+#  define STRING_READ(KIND, DATA, INDEX) PyUnicode_READ(KIND, DATA, INDEX)
+#  define STRING_WRITE(KIND, DATA, INDEX, CHAR) PyUnicode_WRITE(KIND, DATA, INDEX, CHAR)
+#  define STRING_LENGTH(STR) PyUnicode_GET_LENGTH(STR)
+#  define STRING_DATA(STR) PyUnicode_DATA(STR)
+
+#elif defined(PYTHON3)
+#  define STRING_READ(KIND, DATA, INDEX) ((DATA)[INDEX])
+#  define STRING_WRITE(KIND, DATA, INDEX, CHAR) \
+    do { STRING_READ(KIND, DATA, INDEX) = (CHAR); } while (0)
+#  define STRING_LENGTH(STR) PyUnicode_GET_LENGTH(STR)
+#  define STRING_DATA(STR) PyUnicode_AS_UNICODE(STR)
+
+#else
+#  define STRING_READ(KIND, DATA, INDEX) ((DATA)[INDEX])
+#  define STRING_WRITE(KIND, DATA, INDEX, CHAR) \
+    do { STRING_READ(KIND, DATA, INDEX) = (CHAR); } while (0)
+#  define STRING_LENGTH(STR) PyString_GET_SIZE(STR)
+#  define STRING_DATA(STR) PyString_AS_STRING(STR)
+#endif
+
+#ifdef PYTHON3
+#  define CHAR_LOWER _PyUnicode_ToLowercase
+#else
+#  define CHAR_LOWER tolower
+#endif
+
+
+#ifndef PYTHON3
+typedef long Py_hash_t;
+typedef unsigned long Py_uhash_t;
+#endif
+
+#ifndef _PyHASH_MULTIPLIER
+#define _PyHASH_MULTIPLIER 1000003UL  /* 0xf4243 */
+#endif
+
+#ifndef Py_TYPE
+   /* Python 2.5 doesn't have this macro */
+#  define Py_TYPE(obj) obj->ob_type
+#endif
+
 /* Page of a memory page */
 #define PAGE_SIZE 4096
 #define PAGE_SIZE_BITS 12
@@ -313,6 +366,7 @@ key_hash_ptr(const void *key)
     return (Py_uhash_t)_Py_HashPointer((void *)key);
 }
 
+#ifdef TRACE_ARENA
 static Py_uhash_t
 key_hash_arena_ptr(const void *key)
 {
@@ -327,6 +381,7 @@ key_hash_arena_ptr(const void *key)
         x = -2;
     return x;
 }
+#endif
 
 static Py_uhash_t
 filename_hash(PyObject *filename)
@@ -1238,8 +1293,10 @@ static struct {
     PyMemAllocator obj;
 } allocators;
 
+#ifdef TRACE_ARENA
 /* Protected by the GIL */
 static PyObjectArenaAllocator arena_allocator;
+#endif
 
 static struct {
     /* tracemalloc_init() was already called?
@@ -1448,9 +1505,11 @@ static size_t tracemalloc_traced_memory = 0;
    Protected by TABLES_LOCK(). */
 static size_t tracemalloc_max_traced_memory = 0;
 
+#ifdef TRACE_ARENA
 /* Total size of the arenas memory.
    Protected by the GIL. */
 static size_t tracemalloc_arena_size = 0;
+#endif
 
 static struct {
     /* tracemalloc_filenames, tracemalloc_tracebacks.
@@ -1483,9 +1542,11 @@ static hash_t *tracemalloc_file_stats = NULL;
    Protected by TABLES_LOCK(). */
 static hash_t *tracemalloc_traces = NULL;
 
+#ifdef TRACE_ARENA
 /* Set of arena pointers, see tracemalloc_alloc_arena().
    Protected by the GIL */
 static hash_t *tracemalloc_arenas = NULL;
+#endif
 
 /* Forward declaration */
 static int traceback_match_filters(traceback_t *traceback);
@@ -1509,6 +1570,8 @@ raw_free(void *ptr)
 }
 
 #ifdef USE_MEMORY_POOL
+
+#ifdef TRACE_ARENA
 static void*
 raw_alloc_arena(size_t size)
 {
@@ -1520,6 +1583,20 @@ raw_free_arena(void *ptr, size_t size)
 {
     arena_allocator.free(arena_allocator.ctx, ptr, size);
 }
+#else
+static void*
+raw_alloc_arena(size_t size)
+{
+    return malloc(size);
+}
+
+static void
+raw_free_arena(void *ptr, size_t size)
+{
+    free(ptr);
+}
+#endif
+
 #endif
 
 
@@ -1720,6 +1797,8 @@ tracemalloc_get_frame(PyFrameObject *pyframe, frame_t *frame)
 #endif
         return;
     }
+
+#ifdef PEP393
     if (!PyUnicode_IS_READY(filename)) {
         /* Don't make a Unicode string ready to avoid reentrant calls
            to tracemalloc_malloc() or tracemalloc_realloc() */
@@ -1728,6 +1807,7 @@ tracemalloc_get_frame(PyFrameObject *pyframe, frame_t *frame)
 #endif
         return;
     }
+#endif
 
     /* intern the filename */
     entry = hash_get_entry(tracemalloc_filenames, filename);
@@ -1945,7 +2025,7 @@ tracemalloc_normalize_filename(Py_UCS4 ch)
         return SEP;
 #endif
 #ifdef TRACE_CASE_INSENSITIVE
-    ch = _PyUnicode_ToLowercase(ch);
+    ch = CHAR_LOWER(ch);
 #endif
     return ch;
 }
@@ -1953,8 +2033,12 @@ tracemalloc_normalize_filename(Py_UCS4 ch)
 
 typedef struct {
     PyObject *filename, *pattern;
+#ifdef PEP393
     int file_kind, pat_kind;
     void *file_data, *pat_data;
+#else
+    char *file_data, *pat_data;
+#endif
     Py_ssize_t file_len, pat_len;
 } match_t;
 
@@ -1964,8 +2048,8 @@ match_filename_joker(match_t *match, Py_ssize_t file_pos, Py_ssize_t pat_pos)
     Py_UCS4 ch1, ch2;
 
     while (file_pos < match->file_len && pat_pos < match->pat_len) {
-        ch1 = PyUnicode_READ(match->file_kind, match->file_data, file_pos);
-        ch2 = PyUnicode_READ(match->pat_kind, match->pat_data, pat_pos);
+        ch1 = STRING_READ(match->file_kind, match->file_data, file_pos);
+        ch2 = STRING_READ(match->pat_kind, match->pat_data, pat_pos);
         if (ch2 == '*') {
             int found;
 
@@ -1975,8 +2059,7 @@ match_filename_joker(match_t *match, Py_ssize_t file_pos, Py_ssize_t pat_pos)
                     /* 'abc' always match '*' */
                     return 1;
                 }
-                ch2 = PyUnicode_READ(match->pat_kind, match->pat_data,
-                                     pat_pos);
+                ch2 = STRING_READ(match->pat_kind, match->pat_data, pat_pos);
             } while (ch2 == '*');
 
             do {
@@ -2001,7 +2084,7 @@ match_filename_joker(match_t *match, Py_ssize_t file_pos, Py_ssize_t pat_pos)
 
     if (pat_pos != match->pat_len) {
         if (pat_pos == (match->pat_len - 1)) {
-            ch2 = PyUnicode_READ(match->pat_kind, match->pat_data, pat_pos);
+            ch2 = STRING_READ(match->pat_kind, match->pat_data, pat_pos);
             if (ch2 == '*') {
                 /* 'abc' matchs 'abc*' */
                 return 1;
@@ -2015,37 +2098,49 @@ match_filename_joker(match_t *match, Py_ssize_t file_pos, Py_ssize_t pat_pos)
 static int
 filename_endswith_pyc_pyo(PyObject *filename)
 {
-    void* data;
+#ifdef PEP393
+    void *data;
     int kind;
+#elif defined(PYTHON3)
+    Py_UNICODE *data;
+#else
+    char *data;
+#endif
     Py_UCS4 ch;
     Py_ssize_t len;
 
-    len = PyUnicode_GetLength(filename);
+    len = STRING_LENGTH(filename);
     if (len < 4)
         return 0;
 
+#ifdef PEP393
     data = PyUnicode_DATA(filename);
     kind = PyUnicode_KIND(filename);
+#elif defined(PYTHON3)
+    data = PyUnicode_AS_UNICODE(filename);
+#else
+    data = PyString_AS_STRING(filename);
+#endif
 
-    if (PyUnicode_READ(kind, data, len-4) != '.')
+    if (STRING_READ(kind, data, len-4) != '.')
         return 0;
-    ch = PyUnicode_READ(kind, data, len-3);
+    ch = STRING_READ(kind, data, len-3);
 #ifdef TRACE_CASE_INSENSITIVE
-    ch = _PyUnicode_ToLowercase(ch);
+    ch = CHAR_LOWER(ch);
 #endif
     if (ch != 'p')
         return 0;
 
-    ch = PyUnicode_READ(kind, data, len-2);
+    ch = STRING_READ(kind, data, len-2);
 #ifdef TRACE_CASE_INSENSITIVE
-    ch = _PyUnicode_ToLowercase(ch);
+    ch = CHAR_LOWER(ch);
 #endif
     if (ch != 'y')
         return 0;
 
-    ch = PyUnicode_READ(kind, data, len-1);
+    ch = STRING_READ(kind, data, len-1);
 #ifdef TRACE_CASE_INSENSITIVE
-    ch = _PyUnicode_ToLowercase(ch);
+    ch = CHAR_LOWER(ch);
 #endif
     if ((ch != 'c' && ch != 'o'))
         return 0;
@@ -2059,7 +2154,9 @@ match_filename(filter_t *filter, PyObject *filename)
     match_t match;
     Py_hash_t hash;
 
+#ifdef PEP393
     assert(PyUnicode_IS_READY(filename));
+#endif
 
     if (filename == filter->pattern)
         return 1;
@@ -2077,7 +2174,7 @@ match_filename(filter_t *filter, PyObject *filename)
             return 0;
         }
         else {
-            len = PyUnicode_GetLength(filename);
+            len = STRING_LENGTH(filename);
 
             /* don't compare last character */
             return PyUnicode_Tailmatch(filename, filter->pattern,
@@ -2086,21 +2183,25 @@ match_filename(filter_t *filter, PyObject *filename)
     }
 #endif
 
-    len = PyUnicode_GetLength(filename);
+    len = STRING_LENGTH(filename);
 
     /* replace "a.pyc" and "a.pyo" with "a.py" */
     if (filename_endswith_pyc_pyo(filename))
         len--;
 
     match.filename = filename;
+#ifdef PEP393
     match.file_kind = PyUnicode_KIND(match.filename);
-    match.file_data = PyUnicode_DATA(match.filename);
+#endif
+    match.file_data = STRING_DATA(match.filename);
     match.file_len = len;
 
     match.pattern = filter->pattern;
+#ifdef PEP393
     match.pat_kind = PyUnicode_KIND(match.pattern);
-    match.pat_data = PyUnicode_DATA(match.pattern);
-    match.pat_len = PyUnicode_GET_LENGTH(match.pattern);
+#endif
+    match.pat_data = STRING_DATA(match.pattern);
+    match.pat_len = STRING_LENGTH(match.pattern);
     return match_filename_joker(&match, 0, 0);
 }
 
@@ -2453,6 +2554,7 @@ tracemalloc_raw_realloc(void *ctx, void *ptr, size_t new_size)
 }
 #endif
 
+#ifdef TRACE_ARENA
 static void*
 tracemalloc_alloc_arena(void *ctx, size_t size)
 {
@@ -2483,6 +2585,7 @@ tracemalloc_free_arena(void *ctx, void *ptr, size_t size)
         tracemalloc_arena_size -= size;
     }
 }
+#endif
 
 static int
 filter_init(filter_t *filter,
@@ -2492,29 +2595,42 @@ filter_init(filter_t *filter,
     Py_ssize_t len, len2;
     Py_ssize_t i, j;
     PyObject *new_pattern;
-    Py_UCS4 maxchar, ch;
+    Py_UCS4 ch;
+#ifdef PEP393
+    Py_UCS4 maxchar;
     int kind, kind2;
     void *data, *data2;
+#elif defined(PYTHON3)
+    Py_UNICODE *data, *data2;
+#else
+    char *data, *data2;
+#endif
     int previous_joker;
     size_t njoker;
     Py_hash_t pattern_hash;
 
+#ifdef PEP393
     if (PyUnicode_READY(pattern) < 0)
         return -1;
+#endif
 
-    len = PyUnicode_GetLength(pattern);
+    len = STRING_LENGTH(pattern);
+    data = STRING_DATA(pattern);
+#ifdef PEP393
     kind = PyUnicode_KIND(pattern);
-    data = PyUnicode_DATA(pattern);
+#endif
 
     if (filename_endswith_pyc_pyo(pattern))
         len--;
 
+#ifdef PEP393
     maxchar = 0;
+#endif
     len2 = 0;
     njoker = 0;
     previous_joker = 0;
     for (i=0; i < len; i++) {
-        ch = PyUnicode_READ(kind, data, i);
+        ch = STRING_READ(kind, data, i);
 #ifdef TRACE_NORMALIZE_FILENAME
         ch = tracemalloc_normalize_filename(ch);
 #endif
@@ -2522,7 +2638,9 @@ filter_init(filter_t *filter,
             previous_joker = (ch == '*');
             if (previous_joker)
                 njoker++;
+#ifdef PEP393
             maxchar = Py_MAX(maxchar, ch);
+#endif
             len2++;
         }
         else {
@@ -2536,22 +2654,30 @@ filter_init(filter_t *filter,
         return -1;
     }
 
+#ifdef PEP393
     new_pattern = PyUnicode_New(len2, maxchar);
+#elif defined(PYTHON3)
+    new_pattern = PyUnicode_New(len2);
+#else
+    new_pattern = PyString_FromStringAndSize(NULL, len2);
+#endif
     if (new_pattern == NULL)
         return -1;
+#ifdef PEP393
     kind2 = PyUnicode_KIND(new_pattern);
-    data2 = PyUnicode_DATA(new_pattern);
+#endif
+    data2 = STRING_DATA(new_pattern);
 
     j = 0;
     previous_joker = 0;
     for (i=0; i < len; i++) {
-        ch = PyUnicode_READ(kind, data, i);
+        ch = STRING_READ(kind, data, i);
 #ifdef TRACE_NORMALIZE_FILENAME
         ch = tracemalloc_normalize_filename(ch);
 #endif
         if (!previous_joker || ch != '*') {
             previous_joker = (ch == '*');
-            PyUnicode_WRITE(kind2, data2, j, ch);
+            STRING_WRITE(kind2, data2, j, ch);
             j++;
         }
         else {
@@ -2658,8 +2784,10 @@ tracemalloc_clear_traces(void)
     hash_foreach(tracemalloc_filenames, tracemalloc_clear_filename, NULL);
     hash_clear(tracemalloc_filenames);
 
+#ifdef TRACE_ARENA
     hash_clear(tracemalloc_arenas);
     tracemalloc_arena_size = 0;
+#endif
 }
 
 static int
@@ -2681,7 +2809,9 @@ tracemalloc_init(void)
         return -1;
 
     PyMem_GetAllocator(PYMEM_DOMAIN_RAW, &allocators.raw);
+#ifdef TRACE_ARENA
     PyObject_GetArenaAllocator(&arena_allocator);
+#endif
 
 #ifdef REENTRANT_THREADLOCAL
 #ifdef NT_THREADS
@@ -2740,13 +2870,18 @@ tracemalloc_init(void)
                                   sizeof(trace_t),
                                   key_hash_ptr, key_cmp_direct);
 
+#ifdef TRACE_ARENA
     tracemalloc_arenas = hash_new(&tracemalloc_pools.no_data,
                                   0,
                                   key_hash_arena_ptr, key_cmp_direct);
+#endif
 
     if (tracemalloc_filenames == NULL || tracemalloc_tracebacks == NULL
         || tracemalloc_file_stats == NULL || tracemalloc_traces == NULL
-        || tracemalloc_arenas == NULL )
+#ifdef TRACE_ARENA
+        || tracemalloc_arenas == NULL
+#endif
+        )
     {
         PyErr_NoMemory();
         return -1;
@@ -2760,7 +2895,9 @@ tracemalloc_init(void)
     tracemalloc_tracebacks->name = "tracebacks";
     tracemalloc_file_stats->name = "file_stats";
     tracemalloc_traces->name = "traces";
+#ifdef TRACE_ARENA
     tracemalloc_arenas->name = "arenas";
+#endif
 #endif
 
 #ifdef TRACE_ATFORK
@@ -2809,7 +2946,9 @@ tracemalloc_deinit(void)
     hash_destroy(tracemalloc_traces);
     hash_destroy(tracemalloc_tracebacks);
     hash_destroy(tracemalloc_filenames);
+#ifdef TRACE_ARENA
     hash_destroy(tracemalloc_arenas);
+#endif
 
 #ifdef USE_MEMORY_POOL
     pool_clear(&tracemalloc_pools.no_data);
@@ -2851,7 +2990,9 @@ static int
 tracemalloc_enable(void)
 {
     PyMemAllocator alloc;
+#ifdef TRACE_ARENA
     PyObjectArenaAllocator arena_hook;
+#endif
 
     if (tracemalloc_init() < 0)
         return -1;
@@ -2863,7 +3004,9 @@ tracemalloc_enable(void)
 
     tracemalloc_traced_memory = 0;
     tracemalloc_max_traced_memory = 0;
+#ifdef TRACE_ARENA
     tracemalloc_arena_size = 0;
+#endif
 
 #ifdef TRACE_RAW_MALLOC
     alloc.malloc = tracemalloc_raw_malloc;
@@ -2887,10 +3030,12 @@ tracemalloc_enable(void)
     PyMem_GetAllocator(PYMEM_DOMAIN_OBJ, &allocators.obj);
     PyMem_SetAllocator(PYMEM_DOMAIN_OBJ, &alloc);
 
+#ifdef TRACE_ARENA
     arena_hook.ctx = &arena_allocator;
     arena_hook.alloc = tracemalloc_alloc_arena;
     arena_hook.free = tracemalloc_free_arena;
     PyObject_SetArenaAllocator(&arena_hook);
+#endif
 
     /* every is ready: start tracing Python memory allocations */
     set_reentrant(0);
@@ -2922,7 +3067,9 @@ tracemalloc_disable(void)
     PyMem_SetAllocator(PYMEM_DOMAIN_MEM, &allocators.mem);
     PyMem_SetAllocator(PYMEM_DOMAIN_OBJ, &allocators.obj);
 
+#ifdef TRACE_ARENA
     PyObject_SetArenaAllocator(&arena_allocator);
+#endif
 
     /* release memory */
     tracemalloc_clear_traces();
@@ -3327,7 +3474,8 @@ tracemalloc_pyfilter_richcompare(FilterObject *self, FilterObject *other, int op
         return res;
     }
     else {
-        Py_RETURN_NOTIMPLEMENTED;
+        Py_INCREF(Py_NotImplemented);
+        return Py_NotImplemented;
     }
 }
 
@@ -3632,9 +3780,13 @@ static PyObject *
 pytask_cancel(TaskObject *self)
 {
     PyObject *res;
+#ifdef PEP393
     _Py_IDENTIFIER(remove);
 
     res = _PyObject_CallMethodId(tracemalloc_tasks, &PyId_remove, "O", self);
+#else
+    res = PyObject_CallMethod(tracemalloc_tasks, "remove", "O", self);
+#endif
     if (res == NULL) {
         if (!PyErr_ExceptionMatches(PyExc_ValueError))
             return NULL;
@@ -4427,7 +4579,9 @@ tracemalloc_get_tracemalloc_memory(PyObject *self)
 #ifdef PRINT_STATS
     hash_print_stats(tracemalloc_filenames);
     hash_print_stats(tracemalloc_tracebacks);
+#ifdef TRACE_ARENA
     hash_print_stats(tracemalloc_arenas);
+#endif
     TABLES_LOCK();
     hash_print_stats(tracemalloc_traces);
     hash_print_stats(tracemalloc_file_stats);
@@ -4443,7 +4597,9 @@ tracemalloc_get_tracemalloc_memory(PyObject *self)
     /* hash tables */
     hash_mem_stats(tracemalloc_tracebacks, &stats);
     hash_mem_stats(tracemalloc_filenames, &stats);
+#ifdef TRACE_ARENA
     hash_mem_stats(tracemalloc_arenas, &stats);
+#endif
 
     TABLES_LOCK();
     hash_mem_stats(tracemalloc_traces, &stats);
@@ -4482,6 +4638,7 @@ tracemalloc_get_traced_memory(PyObject *self)
     return Py_BuildValue("NN", size_obj, max_size_obj);
 }
 
+#ifdef TRACE_ARENA
 PyDoc_STRVAR(tracemalloc_get_arena_size_doc,
     "get_arena_size() -> int\n"
     "\n"
@@ -4492,6 +4649,7 @@ tracemalloc_get_arena_size(PyObject *self)
 {
     return PyLong_FromSize_t(tracemalloc_arena_size);
 }
+#endif
 
 static int
 tracemalloc_add_filter(filter_t *filter)
@@ -4525,17 +4683,6 @@ tracemalloc_add_filter(filter_t *filter)
     filters->nfilter = nfilter;
     filters->filters = new_filters;
     return 0;
-}
-
-PyDoc_STRVAR(tracemalloc_get_allocated_blocks_doc,
-    "get_allocated_blocks() -> int\n"
-    "\n"
-    "Get the current number of allocated memory blocks.");
-
-static PyObject*
-tracemalloc_get_allocated_blocks(PyObject *self)
-{
-    return PyLong_FromSsize_t(_Py_GetAllocatedBlocks());
 }
 
 PyDoc_STRVAR(tracemalloc_add_filter_doc,
@@ -4786,10 +4933,10 @@ static PyMethodDef module_methods[] = {
      METH_NOARGS, tracemalloc_get_tracemalloc_memory_doc},
     {"get_traced_memory", (PyCFunction)tracemalloc_get_traced_memory,
      METH_NOARGS, tracemalloc_get_traced_memory_doc},
+#ifdef TRACE_ARENA
     {"get_arena_size", (PyCFunction)tracemalloc_get_arena_size,
      METH_NOARGS, tracemalloc_get_arena_size_doc},
-    {"get_allocated_blocks", (PyCFunction)tracemalloc_get_allocated_blocks,
-     METH_NOARGS, tracemalloc_get_allocated_blocks_doc},
+#endif
     {"add_filter", (PyCFunction)py_tracemalloc_add_filter,
      METH_VARARGS, tracemalloc_add_filter_doc},
     {"add_include_filter", (PyCFunction)tracemalloc_add_include_filter,
@@ -4815,6 +4962,7 @@ static PyMethodDef module_methods[] = {
 PyDoc_STRVAR(module_doc,
 "_tracemalloc module.");
 
+#ifdef PYTHON3
 static struct PyModuleDef module_def = {
     PyModuleDef_HEAD_INIT,
     "_tracemalloc",
@@ -4823,22 +4971,32 @@ static struct PyModuleDef module_def = {
     module_methods,
     NULL,
 };
+#endif
 
 PyMODINIT_FUNC
+#ifdef PYTHON3
 PyInit__tracemalloc(void)
+#else
+init_tracemalloc(void)
+#endif
 {
     PyObject *m;
+
+#ifdef PYTHON3
     m = PyModule_Create(&module_def);
+#else
+    m = Py_InitModule3("_tracemalloc", module_methods, module_doc);
+#endif
     if (m == NULL)
-        return NULL;
+        goto error;
 
     if (tracemalloc_init() < 0)
-        return NULL;
+        goto error;
 
     if (PyType_Ready(&FilterType) < 0)
-        return NULL;
+        goto error;
     if (PyType_Ready(&TaskType) < 0)
-        return NULL;
+        goto error;
 
     Py_INCREF((PyObject*) &FilterType);
     PyModule_AddObject(m, "Filter", (PyObject*)&FilterType);
@@ -4846,38 +5004,18 @@ PyInit__tracemalloc(void)
     PyModule_AddObject(m, "Task", (PyObject*)&TaskType);
 
     if (tracemalloc_atexit_register(m) < 0)
-        return NULL;
+        goto error;
+#ifdef PYTHON3
     return m;
-}
+#else
+    return;
+#endif
 
-int
-_PyTraceMalloc_Init(void)
-{
-    char *p;
-    PyObject *xoptions, *key;
-    int has_key;
-
-    if ((p = Py_GETENV("PYTHONTRACEMALLOC")) && *p != '\0') {
-        /* enable */
-    }
-    else {
-        xoptions = PySys_GetXOptions();
-        if (xoptions == NULL)
-            return -1;
-
-        key = PyUnicode_FromString("tracemalloc");
-        if (key == NULL)
-            return -1;
-
-        has_key = PyDict_Contains(xoptions, key);
-        Py_DECREF(key);
-        if (has_key < 0)
-            return -1;
-        if (!has_key)
-            return 0;
-    }
-
-    assert(PyGILState_Check());
-    return tracemalloc_enable();
+error:
+#ifdef PYTHON3
+    return NULL;
+#else
+    return;
+#endif
 }
 

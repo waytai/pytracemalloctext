@@ -6,9 +6,14 @@ import sys
 import time
 import tracemalloc
 import unittest
-from unittest.mock import patch
 from test.script_helper import assert_python_ok
-from test import support
+
+PYTHON3 = (sys.version_info >= (3,))
+if PYTHON3:
+    from unittest.mock import patch
+    from test import support
+else:
+    from test import test_support as support
 
 EMPTY_STRING_SIZE = sys.getsizeof(b'')
 
@@ -370,11 +375,10 @@ class TestTracemallocEnabled(unittest.TestCase):
         self.assertIs(calls[0], log_func)
 
     def test_task_memory_threshold(self):
-        diff = None
+        diffs = []
         def log_func(*args, **kw):
-            nonlocal diff
             size, max_size = tracemalloc.get_traced_memory()
-            diff = (size - old_size)
+            diffs = (size - old_size)
 
         obj_size  = 1024 * 1024
         threshold = int(obj_size * 0.75)
@@ -388,6 +392,7 @@ class TestTracemallocEnabled(unittest.TestCase):
 
         # allocate
         obj, source = allocate_bytes(obj_size)
+        diff = diffs[0]
         self.assertIsNotNone(diff)
         self.assertGreaterEqual(diff, threshold)
 
@@ -396,6 +401,7 @@ class TestTracemallocEnabled(unittest.TestCase):
         old_size, max_size = tracemalloc.get_traced_memory()
         obj = None
         size, max_size = tracemalloc.get_traced_memory()
+        diff = diffs[0]
         self.assertIsNotNone(diff)
         self.assertLessEqual(diff, threshold)
 
@@ -592,6 +598,8 @@ class TestTracemallocEnabled(unittest.TestCase):
 
 
 class TestSnapshot(unittest.TestCase):
+    # FIXME: test on Python 2
+    @unittest.skipUnless(PYTHON3, 'need python 3')
     def test_create_snapshot(self):
         stats = {'a.py': {1: (5, 1)}}
         traces = {0x123: (5, ('a.py', 1))}
@@ -1185,6 +1193,8 @@ tracemalloc.size: 200 B (+100 B)
 Traced Python memory: 105 B
         '''.strip() + '\n\n')
 
+    # FIXME: test on Python 2
+    @unittest.skipUnless(PYTHON3, 'need python 3')
     def test_display_top_task(self):
         def callback(snapshot):
             snapshot.add_metric('task', 700, 'size')
@@ -1225,8 +1235,8 @@ class TestTask(unittest.TestCase):
         self.assertEqual(task.func_kwargs, {'key': 'value'})
 
         # func
-        task.func = print
-        self.assertIs(task.func, print)
+        task.func = str
+        self.assertIs(task.func, str)
         self.assertRaises(TypeError, setattr, task, 'func', 5)
 
         # func_args
