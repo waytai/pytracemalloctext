@@ -27,22 +27,91 @@ these memory allocations.
 
 At fork, the module is automatically disabled in the child process.
 
-.. versionadded:: 3.4
+Project homepage: https://pypi.python.org/pypi/pytracemalloc
+
+Documentation: http://pytracemalloc.readthedocs.org/
+
+Python module developed by Wyplay: http://www.wyplay.com/
 
 
-Contents:
+Status of the module
+====================
 
-.. toctree::
-   :maxdepth: 2
+pytracemalloc 0.9.1 contains patches for Python 2.5, 2.7 and 3.4.
+
+The module was proposed for integration in the Python 3.4 standard library, see
+the `PEP 454: Add a new tracemalloc module to trace Python memory allocations
+<http://www.python.org/dev/peps/pep-0454/>`_.
 
 
+Installation
+============
 
-Indices and tables
-==================
+Patch Python
+------------
 
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`
+To install pytracemalloc, you need a modified Python runtime:
+
+* Download Python source code
+* Apply a patch (see below):
+  patch -p1 < pythonXXX.patch
+* Compile and install Python:
+  ./configure && make && sudo make install
+* It can be installed in a custom directory. For example:
+  ./configure --prefix=/opt/mypython
+
+There are 3 types of Python patch to use pytracemalloc:
+
+* Track free lists: track all Python objects. It is the recommended option.
+
+  - Python 2.5.2: python2.5.2_track_free_list.patch
+  - Python 2.7: python2.7_track_free_list.patch
+  - Python 3.4: python3.4_track_free_list.patch
+
+* Don't track free lists: less accurate, but faster.
+
+  - Python 2.5.6: python2.5.6.patch
+  - Python 2.7: python2.7.patch
+  - Python 3.4: python3.4.patch
+
+* Disable free lists: track all Python objects, slower.
+
+  - Python 2.5: python2.5_no_free_list.patch
+  - Python 2.7: python2.7_no_free_list.patch
+
+Python uses "free lists" to avoid memory allocations for best performances.
+When an object is destroyed, the memory is not freed, but kept in a list.
+Creation of an object will try to reuse a dead object from the free list.
+A free list is specific to an object type, or sometimes also to the length
+of the object (for lists for example).
+
+Python 3 uses free lists for the following object types:
+
+* float
+* tuple, list, set, dict
+* bound method, C function, frame
+
+Python 2 uses free lists for the following object types:
+
+* int, float, unicode
+* tuple, list, set, dict
+* bound method, C function, frame
+
+
+Compile and install pytracemalloc
+---------------------------------
+
+Dependencies:
+
+* `Python <http://www.python.org>`_ 2.5 - 3.4
+* `glib <http://www.gtk.org>`_ version 2
+* (optional) `psutil <https://pypi.python.org/pypi/psutil>`_ to get the
+  process memory. pytracemalloc is able to read the memory usage of the process
+  on Linux without psutil.
+
+Install::
+
+    /opt/mypython/bin/python setup.py install
 
 
 Example of top outputs
@@ -1140,4 +1209,74 @@ The command has the following options.
 
     Never use colors, even if :data:`sys.stdout` is a TTY device: set the
     :attr:`DisplayTop.color` attribute to ``False``.
+
+
+Changelog
+=========
+
+Version 0.9.1 (2013-06-01)
+
+- Add ``PYTRACEMALLOC`` environment variable to trace memory allocation as
+  early as possible at Python startup
+- Disable the timer while calling its callback to not call the callback
+  while it is running
+- Fix pythonXXX_track_free_list.patch patches for zombie frames
+- Use also MiB, GiB and TiB units to format a size, not only B and KiB
+
+Version 0.9 (2013-05-31)
+
+- Tracking free lists is now the recommended method to patch Python
+- Fix code tracking Python free lists and python2.7_track_free_list.patch
+- Add patches tracking free lists for Python 2.5.2 and 3.4.
+
+Version 0.8.1 (2013-03-23)
+
+- Fix python2.7.patch and python3.4.patch when Python is not compiled in debug
+  mode (without --with-pydebug)
+- Fix DisplayTop: display "0 B" instead of an empty string if the size is zero
+  (ex: trace in user data)
+- setup.py automatically detects which patch was applied on Python
+
+Version 0.8 (2013-03-19)
+
+- The top uses colors and displays also the memory usage of the process
+- Add DisplayGarbage class
+- Add get_process_memory() function
+- Support collecting arbitrary user data using a callback: Snapshot.create(),
+  DisplayTop() and TakeSnapshot() have has an optional user_data_callback
+  parameter/attribute
+- Display the name of the previous snapshot when comparing two snapshots
+- Command line (-m tracemalloc):
+
+  * Add --color and --no-color options
+  * --include and --exclude command line options can now be specified
+    multiple times
+
+- Automatically disable tracemalloc at exit
+- Remove get_source() and get_stats() functions: they are now private
+
+Version 0.7 (2013-03-04)
+
+- First public version
+
+
+Similar Projects
+================
+
+* `Meliae: Python Memory Usage Analyzer
+  <https://pypi.python.org/pypi/meliae>`_
+* `Issue #3329: API for setting the memory allocator used by Python
+  <http://bugs.python.org/issue3329>`_
+* `Guppy-PE: umbrella package combining Heapy and GSL
+  <http://guppy-pe.sourceforge.net/>`_
+* `PySizer <http://pysizer.8325.org/>`_: developed for Python 2.4
+* `memory_profiler <https://pypi.python.org/pypi/memory_profiler>`_
+* `pympler <http://code.google.com/p/pympler/>`_
+* `memprof <http://jmdana.github.io/memprof/>`_:
+  based on sys.getsizeof() and sys.settrace()
+* `Dozer <https://pypi.python.org/pypi/Dozer>`_: WSGI Middleware version of
+  the CherryPy memory leak debugger
+* `objgraph <http://mg.pov.lt/objgraph/>`_
+* `caulk <https://github.com/smartfile/caulk/>`_
+* Python 3.4 now counts the total number of allocated blocks
 
