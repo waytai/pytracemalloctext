@@ -30,6 +30,21 @@ At fork, the module is automatically disabled in the child process.
 .. versionadded:: 3.4
 
 
+Contents:
+
+.. toctree::
+   :maxdepth: 2
+
+
+
+Indices and tables
+==================
+
+* :ref:`genindex`
+* :ref:`modindex`
+* :ref:`search`
+
+
 Example of top outputs
 ======================
 
