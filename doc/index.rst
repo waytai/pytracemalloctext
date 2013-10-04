@@ -39,9 +39,14 @@ Status of the module
 
 pytracemalloc 0.9.1 contains patches for Python 2.5, 2.7 and 3.4.
 
-The module was proposed for integration in the Python 3.4 standard library, see
-the `PEP 454: Add a new tracemalloc module to trace Python memory allocations
-<http://www.python.org/dev/peps/pep-0454/>`_.
+Python 3.4 has a new API to replace memory allocators which can be used to
+install hooks on memory allocations: `PEP 445 "Add new APIs to customize Python
+memory allocators" <http://www.python.org/dev/peps/pep-0445/>`_. In Python 3.4,
+the ``pymalloc`` allocator now also have a counter of allocated memory blocks.
+
+The tracemalloc module was proposed for integration in the Python 3.4 standard
+library: `PEP 454 "Add a new tracemalloc module to trace Python memory
+allocations" <http://www.python.org/dev/peps/pep-0454/>`_.
 
 
 Installation
@@ -1214,6 +1219,10 @@ The command has the following options.
 Changelog
 =========
 
+Development version:
+
+- Rewrite the API to prepare the PEP 454
+
 Version 0.9.1 (2013-06-01)
 
 - Add ``PYTRACEMALLOC`` environment variable to trace memory allocation as
@@ -1233,27 +1242,28 @@ Version 0.8.1 (2013-03-23)
 
 - Fix python2.7.patch and python3.4.patch when Python is not compiled in debug
   mode (without --with-pydebug)
-- Fix DisplayTop: display "0 B" instead of an empty string if the size is zero
+- Fix :class:`DisplayTop`: display "0 B" instead of an empty string if the size is zero
   (ex: trace in user data)
 - setup.py automatically detects which patch was applied on Python
 
 Version 0.8 (2013-03-19)
 
 - The top uses colors and displays also the memory usage of the process
-- Add DisplayGarbage class
-- Add get_process_memory() function
-- Support collecting arbitrary user data using a callback: Snapshot.create(),
-  DisplayTop() and TakeSnapshot() have has an optional user_data_callback
-  parameter/attribute
+- Add :class:`DisplayGarbage` class
+- Add :func:`get_process_memory` function
+- Support collecting arbitrary user data using a callback:
+  :meth:`Snapshot.create`, :class:`DisplayTop` and :class:`TakeSnapshot` have
+  has an optional user_data_callback parameter/attribute
 - Display the name of the previous snapshot when comparing two snapshots
-- Command line (-m tracemalloc):
+- Command line (``-m tracemalloc``):
 
-  * Add --color and --no-color options
-  * --include and --exclude command line options can now be specified
+  * Add ``--color`` and ``--no-color`` options
+  * ``--include`` and ``--exclude`` command line options can now be specified
     multiple times
 
 - Automatically disable tracemalloc at exit
-- Remove get_source() and get_stats() functions: they are now private
+- Remove :func:`get_source` and :func:`get_stats` functions: they are now
+  private
 
 Version 0.7 (2013-03-04)
 
@@ -1265,8 +1275,6 @@ Similar Projects
 
 * `Meliae: Python Memory Usage Analyzer
   <https://pypi.python.org/pypi/meliae>`_
-* `Issue #3329: API for setting the memory allocator used by Python
-  <http://bugs.python.org/issue3329>`_
 * `Guppy-PE: umbrella package combining Heapy and GSL
   <http://guppy-pe.sourceforge.net/>`_
 * `PySizer <http://pysizer.8325.org/>`_: developed for Python 2.4
@@ -1278,5 +1286,4 @@ Similar Projects
   the CherryPy memory leak debugger
 * `objgraph <http://mg.pov.lt/objgraph/>`_
 * `caulk <https://github.com/smartfile/caulk/>`_
-* Python 3.4 now counts the total number of allocated blocks
 
