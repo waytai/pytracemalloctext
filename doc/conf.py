@@ -37,7 +37,7 @@ source_suffix = '.rst'
 #source_encoding = 'utf-8-sig'
 
 # The master toctree document.
-master_doc = 'tracemalloc'
+master_doc = 'index'
 
 # General information about the project.
 project = u'pytracemalloc'
@@ -183,7 +183,7 @@ latex_elements = {
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
-  ('tracemalloc', 'pytracemalloc.tex', u'pytracemalloc Documentation',
+  ('index', 'pytracemalloc.tex', u'pytracemalloc Documentation',
    u'Victor Stinner', 'manual'),
 ]
 
