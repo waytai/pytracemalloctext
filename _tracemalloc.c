@@ -3723,6 +3723,24 @@ pytask_reschedule(TaskObject *self)
     return 0;
 }
 
+static Py_ssize_t
+pyobj_as_ssize_t(PyObject *obj)
+{
+#ifndef PYTHON3
+    if (PyInt_Check(obj))
+        return PyInt_AsSsize_t(obj);
+    else
+#endif
+    if (PyLong_Check(obj)) {
+        return PyLong_AsSsize_t(obj);
+    }
+    else {
+        PyErr_Format(PyExc_TypeError, "expect a long, got %s",
+                     Py_TYPE(obj)->tp_name);
+        return -1;
+    }
+}
+
 static PyObject *
 pytask_schedule(TaskObject *self, PyObject *args)
 {
@@ -3735,7 +3753,7 @@ pytask_schedule(TaskObject *self, PyObject *args)
         return NULL;
 
     if (repeat_obj != Py_None) {
-        repeat = PyLong_AsSsize_t(repeat_obj);
+        repeat = pyobj_as_ssize_t(repeat_obj);
         if (repeat == -1 && PyErr_Occurred())
             return NULL;
         if (repeat <= 0) {
@@ -3858,7 +3876,7 @@ pytask_set_memory_threshold(TaskObject *self, PyObject *threshold_obj)
     Py_ssize_t memory_threshold;
 
     if (threshold_obj != Py_None) {
-        memory_threshold = PyLong_AsSsize_t(threshold_obj);
+        memory_threshold = pyobj_as_ssize_t(threshold_obj);
         if (memory_threshold == -1 && PyErr_Occurred())
             return NULL;
         if (memory_threshold <= 0) {
