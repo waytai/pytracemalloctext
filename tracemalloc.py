@@ -17,6 +17,7 @@ except ImportError:
 
 # Import types and functions implemented in C
 from _tracemalloc import *
+from _tracemalloc import __version__
 
 def _format_timestamp(timestamp):
     return str(timestamp).split(".", 1)[0]

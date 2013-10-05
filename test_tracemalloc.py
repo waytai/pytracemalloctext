@@ -1,5 +1,6 @@
 import contextlib
 import datetime
+import imp
 import io
 import os
 import sys
@@ -1289,6 +1290,18 @@ class TestTask(unittest.TestCase):
         self.assertEqual(kwargs, {'key': 'value'})
 
 
+class TestVersion(unittest.TestCase):
+    def test_version(self):
+        filename = os.path.join(os.path.dirname(__file__), 'setup.py')
+        if sys.version_info >= (3, 4):
+            import importlib
+            loader = importlib.machinery.SourceFileLoader('setup', filename)
+            setup_py = loader.load_module()
+        else:
+            setup_py = imp.load_source('setup', filename)
+        self.assertEqual(tracemalloc.__version__, setup_py.VERSION)
+
+
 def test_main():
     support.run_unittest(
         TestTracemallocEnabled,
@@ -1297,6 +1310,7 @@ def test_main():
         TestCommandLine,
         TestTop,
         TestTask,
+        TestVersion,
     )
 
 if __name__ == "__main__":

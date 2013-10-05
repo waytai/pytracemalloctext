@@ -269,6 +269,9 @@ classes for more options.
 API
 ===
 
+The version of the module is ``tracemalloc.__version__`` (``str``, ex:
+``"0.9.1"``).
+
 Main Functions
 --------------
 

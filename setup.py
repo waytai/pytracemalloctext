@@ -30,7 +30,7 @@ TRACE_PYMEM_RAW = True
 # Debug pytracemalloc
 DEBUG = False
 
-VERSION = '0.9.2'
+VERSION = '1.0dev'
 
 CLASSIFIERS = [
     'Development Status :: 3 - Alpha',

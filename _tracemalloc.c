@@ -44,6 +44,8 @@
    ----------------------------------
 */
 
+#define VERSION "1.0dev"
+
 #include "Python.h"
 #include "frameobject.h"
 #include "pythread.h"
@@ -4980,7 +4982,7 @@ PyInit__tracemalloc(void)
 init_tracemalloc(void)
 #endif
 {
-    PyObject *m;
+    PyObject *m, *version;
 
 #ifdef PYTHON3
     m = PyModule_Create(&module_def);
@@ -5002,6 +5004,15 @@ init_tracemalloc(void)
     PyModule_AddObject(m, "Filter", (PyObject*)&FilterType);
     Py_INCREF((PyObject*) &TaskType);
     PyModule_AddObject(m, "Task", (PyObject*)&TaskType);
+
+#ifdef PYTHON3
+    version = PyUnicode_FromString(VERSION);
+#else
+    version = PyString_FromString(VERSION);
+#endif
+    if (version == NULL)
+        goto error;
+    PyModule_AddObject(m, "__version__", version);
 
     if (tracemalloc_atexit_register(m) < 0)
         goto error;
