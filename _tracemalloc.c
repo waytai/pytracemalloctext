@@ -3269,7 +3269,7 @@ tracemalloc_parse_lineno(PyObject* arg, void* addr)
 }
 
 static int
-tracemalloc_pyfilter_init(FilterObject *self, PyObject *args, PyObject *kwds)
+pyfilter_init(FilterObject *self, PyObject *args, PyObject *kwds)
 {
     static char *kwlist[] = {"include", "filename", "lineno", "traceback", 0};
     int include;
@@ -3292,14 +3292,14 @@ tracemalloc_pyfilter_init(FilterObject *self, PyObject *args, PyObject *kwds)
 }
 
 static void
-tracemalloc_pyfilter_dealloc(FilterObject *self)
+pyfilter_dealloc(FilterObject *self)
 {
     filter_deinit(&self->filter);
     PyObject_FREE(self);
 }
 
 static PyObject*
-tracemalloc_pyfilter_match(PyObject *self, PyObject *args)
+pyfilter_match(PyObject *self, PyObject *args)
 {
     FilterObject *pyfilter = (FilterObject *)self;
     PyObject *filename;
@@ -3360,7 +3360,7 @@ parse_traceback(PyObject *pytraceback,
 }
 
 static PyObject*
-tracemalloc_pyfilter_match_traceback(PyObject *self, PyObject *args)
+pyfilter_match_traceback(PyObject *self, PyObject *args)
 {
     FilterObject *pyfilter = (FilterObject *)self;
     PyObject *pytraceback;
@@ -3379,7 +3379,7 @@ tracemalloc_pyfilter_match_traceback(PyObject *self, PyObject *args)
 }
 
 static PyObject*
-tracemalloc_pyfilter_match_filename(PyObject *self, PyObject *args)
+pyfilter_match_filename(PyObject *self, PyObject *args)
 {
     FilterObject *pyfilter = (FilterObject *)self;
     PyObject *filename;
@@ -3394,7 +3394,7 @@ tracemalloc_pyfilter_match_filename(PyObject *self, PyObject *args)
 }
 
 static PyObject*
-tracemalloc_pyfilter_match_lineno(PyObject *self, PyObject *args)
+pyfilter_match_lineno(PyObject *self, PyObject *args)
 {
     FilterObject *pyfilter = (FilterObject *)self;
     int lineno;
@@ -3409,32 +3409,32 @@ tracemalloc_pyfilter_match_lineno(PyObject *self, PyObject *args)
 }
 
 static PyObject *
-tracemalloc_pyfilter_get_include(FilterObject *self, void *closure)
+pyfilter_get_include(FilterObject *self, void *closure)
 {
     return PyBool_FromLong(self->filter.include);
 }
 
 static PyObject *
-tracemalloc_pyfilter_get_pattern(FilterObject *self, void *closure)
+pyfilter_get_pattern(FilterObject *self, void *closure)
 {
     Py_INCREF(self->filter.pattern);
     return self->filter.pattern;
 }
 
 static PyObject *
-tracemalloc_pyfilter_get_lineno(FilterObject *self, void *closure)
+pyfilter_get_lineno(FilterObject *self, void *closure)
 {
     return tracemalloc_lineno_as_obj(self->filter.lineno);
 }
 
 static PyObject *
-tracemalloc_pyfilter_get_traceback(FilterObject *self, void *closure)
+pyfilter_get_traceback(FilterObject *self, void *closure)
 {
     return PyBool_FromLong(self->filter.traceback);
 }
 
 static PyObject*
-tracemalloc_pyfilter_repr(FilterObject *self)
+pyfilter_repr(FilterObject *self)
 {
     char lineno[30];
     if (self->filter.lineno > 1)
@@ -3466,7 +3466,7 @@ filter_compare(filter_t *f1, filter_t *f2)
 }
 
 static Py_hash_t
-tracemalloc_pyfilter_hash(FilterObject *self)
+pyfilter_hash(FilterObject *self)
 {
     Py_hash_t hash;
 
@@ -3478,7 +3478,7 @@ tracemalloc_pyfilter_hash(FilterObject *self)
 }
 
 static PyObject *
-tracemalloc_pyfilter_richcompare(FilterObject *self, FilterObject *other, int op)
+pyfilter_richcompare(FilterObject *self, FilterObject *other, int op)
 {
     if (op == Py_EQ || op == Py_NE) {
         int eq;
@@ -3501,36 +3501,36 @@ tracemalloc_pyfilter_richcompare(FilterObject *self, FilterObject *other, int op
     }
 }
 
-static PyGetSetDef tracemalloc_pyfilter_getset[] = {
-    {"include", (getter) tracemalloc_pyfilter_get_include, NULL,
+static PyGetSetDef pyfilter_getset[] = {
+    {"include", (getter) pyfilter_get_include, NULL,
      "Include or exclude the trace?"},
-    {"pattern", (getter) tracemalloc_pyfilter_get_pattern, NULL,
+    {"pattern", (getter) pyfilter_get_pattern, NULL,
      "Pattern matching a filename, can contain one "
      "or many '*' joker characters"},
-    {"lineno", (getter) tracemalloc_pyfilter_get_lineno, NULL,
+    {"lineno", (getter) pyfilter_get_lineno, NULL,
      "Line number"},
-    {"traceback", (getter) tracemalloc_pyfilter_get_traceback, NULL,
+    {"traceback", (getter) pyfilter_get_traceback, NULL,
      "Check the whole traceback, or only the most recent frame?"},
     {NULL}
 };
 
-static PyMethodDef tracemalloc_pyfilter_methods[] = {
-    {"match", (PyCFunction)tracemalloc_pyfilter_match,
+static PyMethodDef pyfilter_methods[] = {
+    {"match", (PyCFunction)pyfilter_match,
      METH_VARARGS,
      PyDoc_STR("match(filename: str, lineno: int) -> bool")},
-    {"match_traceback", (PyCFunction)tracemalloc_pyfilter_match_traceback,
+    {"match_traceback", (PyCFunction)pyfilter_match_traceback,
      METH_VARARGS,
      PyDoc_STR("match_traceback(traceback) -> bool")},
-    {"match_filename", (PyCFunction)tracemalloc_pyfilter_match_filename,
+    {"match_filename", (PyCFunction)pyfilter_match_filename,
      METH_VARARGS,
      PyDoc_STR("match_filename(filename: str) -> bool")},
-    {"match_lineno", (PyCFunction)tracemalloc_pyfilter_match_lineno,
+    {"match_lineno", (PyCFunction)pyfilter_match_lineno,
      METH_VARARGS,
      PyDoc_STR("match_lineno(lineno: int) -> bool")},
     {NULL,              NULL}           /* sentinel */
 };
 
-PyDoc_STRVAR(tracemalloc_pyfilter_doc,
+PyDoc_STRVAR(pyfilter_doc,
 "Filter(include: bool, filename: str, lineno: int=None, traceback: bool=False)");
 
 static PyTypeObject FilterType = {
@@ -3541,38 +3541,38 @@ static PyTypeObject FilterType = {
     sizeof(FilterObject),       /*tp_basicsize*/
     0,                          /*tp_itemsize*/
     /* methods */
-    (destructor)tracemalloc_pyfilter_dealloc,    /*tp_dealloc*/
+    (destructor)pyfilter_dealloc,   /*tp_dealloc*/
     0,                          /*tp_print*/
     (getattrfunc)0,             /*tp_getattr*/
-    (setattrfunc)0,   /*tp_setattr*/
+    (setattrfunc)0,             /*tp_setattr*/
     0,                          /*tp_reserved*/
-    (reprfunc)tracemalloc_pyfilter_repr, /*tp_repr*/
+    (reprfunc)pyfilter_repr,    /*tp_repr*/
     0,                          /*tp_as_number*/
     0,                          /*tp_as_sequence*/
     0,                          /*tp_as_mapping*/
-    (hashfunc)tracemalloc_pyfilter_hash, /*tp_hash*/
+    (hashfunc)pyfilter_hash,    /*tp_hash*/
     0,                          /*tp_call*/
     0,                          /*tp_str*/
-    (getattrofunc)0, /*tp_getattro*/
+    (getattrofunc)0,            /*tp_getattro*/
     0,                          /*tp_setattro*/
     0,                          /*tp_as_buffer*/
     Py_TPFLAGS_DEFAULT,         /*tp_flags*/
-    tracemalloc_pyfilter_doc,   /*tp_doc*/
+    pyfilter_doc,               /*tp_doc*/
     0,                          /*tp_traverse*/
     0,                          /*tp_clear*/
-    (richcmpfunc)tracemalloc_pyfilter_richcompare, /*tp_richcompare*/
+    (richcmpfunc)pyfilter_richcompare, /*tp_richcompare*/
     0,                          /*tp_weaklistoffset*/
     0,                          /*tp_iter*/
     0,                          /*tp_iternext*/
-    tracemalloc_pyfilter_methods, /*tp_methods*/
+    pyfilter_methods,           /*tp_methods*/
     0,                          /*tp_members*/
-    tracemalloc_pyfilter_getset, /* tp_getset */
+    pyfilter_getset,            /* tp_getset */
     0,                          /*tp_base*/
     0,                          /*tp_dict*/
     0,                          /*tp_descr_get*/
     0,                          /*tp_descr_set*/
     0,                          /*tp_dictoffset*/
-    (initproc)tracemalloc_pyfilter_init, /* tp_init */
+    (initproc)pyfilter_init,    /* tp_init */
     0,                          /*tp_alloc*/
     PyType_GenericNew,          /*tp_new*/
     0,                          /*tp_free*/
