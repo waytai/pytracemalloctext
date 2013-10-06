@@ -48,6 +48,7 @@
 
 #include "Python.h"
 #include "frameobject.h"
+#include "pystate.h"
 #include "pythread.h"
 #include "osdefs.h"
 #ifdef NT_THREADS
