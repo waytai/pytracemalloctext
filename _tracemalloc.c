@@ -1778,7 +1778,7 @@ tracemalloc_get_frame(PyFrameObject *pyframe, frame_t *frame)
 #ifdef TRACE_DEBUG
         tracemalloc_error(
             "failed to get the code object of "
-            "the a frame (thread %li)\n",
+            "the a frame (thread %li)",
             PyThread_get_thread_ident());
 #endif
         return;
@@ -1788,7 +1788,7 @@ tracemalloc_get_frame(PyFrameObject *pyframe, frame_t *frame)
 #ifdef TRACE_DEBUG
         tracemalloc_error(
             "failed to get the filename of the code object "
-            "(thread %li)\n",
+            "(thread %li)",
             PyThread_get_thread_ident());
 #endif
         return;
@@ -1799,7 +1799,7 @@ tracemalloc_get_frame(PyFrameObject *pyframe, frame_t *frame)
 
     if (!STRING_CHECK(filename)) {
 #ifdef TRACE_DEBUG
-        tracemalloc_error("filename is not an unicode string\n");
+        tracemalloc_error("filename is not an unicode string");
 #endif
         return;
     }
@@ -1809,7 +1809,7 @@ tracemalloc_get_frame(PyFrameObject *pyframe, frame_t *frame)
         /* Don't make a Unicode string ready to avoid reentrant calls
            to tracemalloc_malloc() or tracemalloc_realloc() */
 #ifdef TRACE_DEBUG
-        tracemalloc_error("filename is not a ready unicode string\n");
+        tracemalloc_error("filename is not a ready unicode string");
 #endif
         return;
     }
@@ -1826,7 +1826,7 @@ tracemalloc_get_frame(PyFrameObject *pyframe, frame_t *frame)
         Py_INCREF(filename);
         if (hash_put_data(tracemalloc_filenames, filename, NULL, 0) < 0) {
 #ifdef TRACE_DEBUG
-            tracemalloc_error("failed to intern the filename\n");
+            tracemalloc_error("failed to intern the filename");
 #endif
             return;
         }
@@ -1871,7 +1871,7 @@ traceback_get_frames(traceback_t *traceback)
     if (tstate == NULL) {
 #ifdef TRACE_DEBUG
         tracemalloc_error(
-            "failed to get the current thread state (thread %li)\n",
+            "failed to get the current thread state (thread %li)",
             PyThread_get_thread_ident());
 #endif
         return;
@@ -1915,7 +1915,7 @@ traceback_new(void)
         copy = raw_malloc(traceback_size);
         if (copy == NULL) {
 #ifdef TRACE_DEBUG
-            tracemalloc_error("failed to intern the traceback: malloc failed\n");
+            tracemalloc_error("failed to intern the traceback: malloc failed");
 #endif
             return NULL;
         }
@@ -1925,7 +1925,7 @@ traceback_new(void)
            to the traceback */
         if (hash_put_data(tracemalloc_tracebacks, copy, NULL, 0) < 0) {
 #ifdef TRACE_DEBUG
-            tracemalloc_error("failed to intern the traceback: putdata failed\n");
+            tracemalloc_error("failed to intern the traceback: putdata failed");
 #endif
             return NULL;
         }
