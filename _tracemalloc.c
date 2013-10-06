@@ -90,8 +90,12 @@
 #endif
 
 #ifdef PYTHON3
+#  define STRING_COMPARE(str1, str2) PyUnicode_Compare(str1, str2)
+#  define STRING_CHECK(obj) PyUnicode_Check(obj)
 #  define CHAR_LOWER _PyUnicode_ToLowercase
 #else
+#  define STRING_COMPARE(str1, str2) PyObject_Compare(str1, str2)
+#  define STRING_CHECK(obj) PyString_Check(obj)
 #  define CHAR_LOWER tolower
 #endif
 
@@ -398,7 +402,7 @@ static int
 key_cmp_unicode(const void *key, hash_entry_t *he)
 {
     if (key != NULL && he->key != NULL)
-        return (PyUnicode_Compare((PyObject *)key, (PyObject *)he->key) == 0);
+        return (STRING_COMPARE((PyObject *)key, (PyObject *)he->key) == 0);
     else
         return key == he->key;
 }
@@ -1752,7 +1756,7 @@ key_cmp_traceback(const traceback_t *traceback1, hash_entry_t *he)
             if (hash1 != hash2)
                 return 0;
 
-            if (PyUnicode_Compare(frame1->filename, frame2->filename) != 0)
+            if (STRING_COMPARE(frame1->filename, frame2->filename) != 0)
                 return 0;
         }
     }
@@ -1793,7 +1797,7 @@ tracemalloc_get_frame(PyFrameObject *pyframe, frame_t *frame)
     filename = code->co_filename;
     assert(filename != NULL);
 
-    if (!PyUnicode_CheckExact(filename)) {
+    if (!STRING_CHECK(filename)) {
 #ifdef TRACE_DEBUG
         tracemalloc_error("filename is not an unicode string\n");
 #endif
@@ -2165,7 +2169,7 @@ match_filename(filter_t *filter, PyObject *filename)
 
     hash = PyObject_Hash(filename);
     if (hash == filter->pattern_hash) {
-        if (PyUnicode_Compare(filename, filter->pattern) == 0)
+        if (STRING_COMPARE(filename, filter->pattern) == 0)
             return 1;
     }
 
@@ -2610,6 +2614,22 @@ filter_init(filter_t *filter,
     int previous_joker;
     size_t njoker;
     Py_hash_t pattern_hash;
+
+#ifdef PYTHON3
+    if (!STRING_CHECK(pattern)) {
+        PyErr_Format(PyExc_TypeError,
+                     "filename pattern must be a str, not %s",
+                     Py_TYPE(pattern)->tp_name);
+        return -1;
+    }
+#else
+    if (!STRING_CHECK(pattern)) {
+        PyErr_Format(PyExc_TypeError,
+                     "filename pattern must be a str, not %s",
+                     Py_TYPE(pattern)->tp_name);
+        return -1;
+    }
+#endif
 
 #ifdef PEP393
     if (PyUnicode_READY(pattern) < 0)
@@ -3219,7 +3239,7 @@ tracemalloc_parse_filename(PyObject* arg, void* addr)
     if (arg == Py_None) {
         filename = NULL;
     }
-    else if (PyUnicode_Check(arg)) {
+    else if (STRING_CHECK(arg)) {
         filename = arg;
     }
     else {
@@ -3437,7 +3457,7 @@ filter_compare(filter_t *f1, filter_t *f2)
         return 0;
     if (f1->traceback != f2->traceback)
         return 0;
-    if (PyUnicode_Compare(f1->pattern, f2->pattern) != 0)
+    if (STRING_COMPARE(f1->pattern, f2->pattern) != 0)
         return 0;
 #ifndef TRACE_NORMALIZE_FILENAME
     assert(f1->use_joker == f2->use_joker);
@@ -4748,7 +4768,7 @@ tracemalloc_add_include_filter(PyObject *self, PyObject *args, PyObject *kwds)
     int traceback = 0;
     filter_t filter;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "U|O&i:add_include_filter", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O&i:add_include_filter", kwlist,
                                      &filename,
                                      &tracemalloc_parse_lineno, &lineno,
                                      &traceback))
@@ -4778,7 +4798,7 @@ tracemalloc_add_exclude_filter(PyObject *self, PyObject *args, PyObject *kwds)
     int traceback = 0;
     filter_t filter;
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "U|O&i:add_exclude_filter", kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "O|O&i:add_exclude_filter", kwlist,
                                      &filename,
                                      &tracemalloc_parse_lineno, &lineno,
                                      &traceback))
