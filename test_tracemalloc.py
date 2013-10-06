@@ -398,9 +398,7 @@ class TestTracemallocEnabled(unittest.TestCase):
         # allocate
         obj, source = allocate_bytes(obj_size)
         after = tracemalloc.get_traced_memory()[0]
-        print("DIFF", after - before, "obj", obj_size, threshold)
         self.assertEqual(len(diffs), 1)
-        print(diffs)
         self.assertGreaterEqual(diffs[0], obj_size)
 
         # release
