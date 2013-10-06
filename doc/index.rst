@@ -14,8 +14,7 @@ Python. It provides the following information:
 
 To trace most memory blocks allocated by Python, the module should be enabled
 as early as possible by setting the :envvar:`PYTHONTRACEMALLOC` environment
-variable to ``1``, or by using :option:`-X` ``tracemalloc`` command line
-option. The :func:`tracemalloc.enable` function can also be called to start
+variable to ``1``. The :func:`tracemalloc.enable` function can also be called to start
 tracing Python memory allocations.
 
 By default, a trace of an allocated memory block only stores one frame. Use the

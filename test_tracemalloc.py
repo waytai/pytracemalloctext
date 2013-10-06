@@ -13,8 +13,15 @@ PYTHON3 = (sys.version_info >= (3,))
 if PYTHON3:
     from unittest.mock import patch
     from test import support
+    from io import StringIO
+    INT_TYPES = int
 else:
     from test import test_support as support
+    try:
+        from cStringIO import StringIO
+    except ImportError:
+        from StringIO import StringIO
+    INT_TYPES = (int, long)
 
 EMPTY_STRING_SIZE = sys.getsizeof(b'')
 
@@ -266,10 +273,6 @@ class TestTracemallocEnabled(unittest.TestCase):
         tracemalloc.disable()
         self.assertEqual(tracemalloc.get_traced_memory(), (0, 0))
 
-    def test_get_arena_size(self):
-        size = tracemalloc.get_arena_size()
-        self.assertGreaterEqual(size, 0)
-
     def test_get_stats(self):
         tracemalloc.clear_traces()
         total_size = 0
@@ -288,8 +291,8 @@ class TestTracemallocEnabled(unittest.TestCase):
                     # stats can be huge, one test per file should be enough
                     self.assertIsInstance(line_stat, tuple)
                     size, count = line_stat
-                    self.assertIsInstance(size, int)
-                    self.assertIsInstance(count, int)
+                    self.assertIsInstance(size, INT_TYPES)
+                    self.assertIsInstance(count, INT_TYPES)
                     self.assertGreaterEqual(size, 0)
                     self.assertGreaterEqual(count, 1)
                     break
@@ -379,7 +382,7 @@ class TestTracemallocEnabled(unittest.TestCase):
         diffs = []
         def log_func(*args, **kw):
             size, max_size = tracemalloc.get_traced_memory()
-            diffs = (size - old_size)
+            diffs.append(size - old_size)
 
         obj_size  = 1024 * 1024
         threshold = int(obj_size * 0.75)
@@ -389,22 +392,24 @@ class TestTracemallocEnabled(unittest.TestCase):
         old_size, max_size = tracemalloc.get_traced_memory()
         task = tracemalloc.Task(log_func, args, kwargs)
         task.set_memory_threshold(threshold)
+        before = tracemalloc.get_traced_memory()[0]
         task.schedule()
 
         # allocate
         obj, source = allocate_bytes(obj_size)
-        diff = diffs[0]
-        self.assertIsNotNone(diff)
-        self.assertGreaterEqual(diff, threshold)
+        after = tracemalloc.get_traced_memory()[0]
+        print("DIFF", after - before, "obj", obj_size, threshold)
+        self.assertEqual(len(diffs), 1)
+        print(diffs)
+        self.assertGreaterEqual(diffs[0], obj_size)
 
         # release
-        diff = None
+        del diffs[:]
         old_size, max_size = tracemalloc.get_traced_memory()
         obj = None
         size, max_size = tracemalloc.get_traced_memory()
-        diff = diffs[0]
-        self.assertIsNotNone(diff)
-        self.assertLessEqual(diff, threshold)
+        self.assertEqual(len(diffs), 1)
+        self.assertLessEqual(diffs[0], obj_size)
 
     def test_task_repeat(self):
         calls = []
@@ -448,8 +453,7 @@ class TestTracemallocEnabled(unittest.TestCase):
             self.assertEqual(len(calls), 1)
             self.assertEqual(calls[0], (failing_func,))
         output = stderr.getvalue()
-        self.assertIn('ValueError: oops', output)
-        self.assertEqual(output.count('Traceback'), 1)
+        self.assertRegexpMatches(output, 'ValueError.*oops')
 
         self.assertFalse(task.is_scheduled())
 
@@ -486,8 +490,7 @@ class TestTracemallocEnabled(unittest.TestCase):
             self.assertGreater(process_vms, 0)
 
         self.assertIsInstance(snapshot.metrics, dict)
-        for key in ('tracemalloc.arena_size',
-                    'tracemalloc.module.free',
+        for key in ('tracemalloc.module.free',
                     'tracemalloc.module.size',
                     'tracemalloc.module.fragmentation',
                     'tracemalloc.traced.max_size',
@@ -927,13 +930,6 @@ class TestCommandLine(unittest.TestCase):
         stdout = stdout.rstrip()
         self.assertEqual(stdout, b'True')
 
-    def test_sys_xoptions(self):
-        # -X tracemalloc
-        code = 'import tracemalloc; print(tracemalloc.is_enabled())'
-        ok, stdout, stderr = assert_python_ok('-X', 'tracemalloc', '-c', code)
-        stdout = stdout.rstrip()
-        self.assertEqual(stdout, b'True')
-
 
 class TestTop(unittest.TestCase):
     maxDiff = 2048
@@ -1105,7 +1101,7 @@ class TestTop(unittest.TestCase):
         snapshot, snapshot2 = create_snapshots()
 
         # top per line
-        output = io.StringIO()
+        output = StringIO()
         top = tracemalloc.DisplayTop()
         top.display_snapshot(snapshot, file=output)
         text = output.getvalue()
@@ -1123,7 +1119,7 @@ tracemalloc.size: 100 B
         '''.strip() + '\n\n')
 
         # diff per line
-        output = io.StringIO()
+        output = StringIO()
         top.display_snapshot(snapshot2, count=3, file=output)
         text = output.getvalue()
         self.assertEqual(text, '''
@@ -1143,7 +1139,7 @@ tracemalloc.size: 200 B (+100 B)
         snapshot, snapshot2 = create_snapshots()
 
         # group per file
-        output = io.StringIO()
+        output = StringIO()
         top = tracemalloc.DisplayTop()
         top.display_snapshot(snapshot, group_by='filename', file=output)
         text = output.getvalue()
@@ -1160,7 +1156,7 @@ tracemalloc.size: 100 B
         '''.strip() + '\n\n')
 
         # diff per file
-        output = io.StringIO()
+        output = StringIO()
         top.display_snapshot(snapshot2, group_by='filename', file=output)
         text = output.getvalue()
         self.assertEqual(text, '''
@@ -1178,7 +1174,7 @@ tracemalloc.size: 200 B (+100 B)
 
     def test_display_top_options(self):
         snapshot, snapshot2 = create_snapshots()
-        output = io.StringIO()
+        output = StringIO()
         top = tracemalloc.DisplayTop()
         top.metrics = False
         top.average = False
@@ -1203,7 +1199,7 @@ Traced Python memory: 105 B
         snapshot, snapshot2 = create_snapshots()
 
         # top per file (default options)
-        output = io.StringIO()
+        output = StringIO()
         top = tracemalloc.DisplayTop()
 
         with patch.object(tracemalloc.Snapshot,

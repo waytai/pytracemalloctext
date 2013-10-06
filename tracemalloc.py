@@ -305,7 +305,10 @@ class DisplayTop:
         else:
             new_metrics  = {}
 
-        names = list(old_metrics.keys() | new_metrics.keys())
+        if sys.version_info >= (3, 3):
+            names = list(old_metrics.keys() | new_metrics.keys())
+        else:
+            names = list(set(old_metrics.keys()) | set(new_metrics.keys()))
         names.sort()
         if not names:
             return
@@ -565,8 +568,6 @@ class Snapshot:
         if size:
             frag = free / size
             self.add_metric('tracemalloc.module.fragmentation', frag, 'percent')
-
-        self.add_metric('tracemalloc.arena_size', get_arena_size(), 'size')
 
     def add_process_memory_metrics(self):
         process_memory = get_process_memory()
