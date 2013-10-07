@@ -1192,6 +1192,8 @@ Changelog
 Development version:
 
 - Rewrite the API to prepare the PEP 454
+- Remove the dependency to the glib library: tracemalloc now has its own
+  implementation of hash table, based on the cfuhash library
 
 Version 0.9.1 (2013-06-01)
 

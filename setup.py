@@ -3,6 +3,7 @@
 # Todo list to prepare a release:
 #  - run unit tests
 #  - update VERSION in _tracemalloc.c and setup.py
+#  - reset option in setup.py: DEBUG=False
 #  - set release date in the README.rst file
 #  - git commit -a
 #  - git tag -a pytracemalloc-VERSION
@@ -22,13 +23,13 @@ import os
 import subprocess
 import sys
 
-# Define TRACE_PYMEM_RAW (experimental option): yes, I like to call
-# PyGILState_Ensure() when the GIL is released to track PyMem_RawMalloc()
-# and PyMem_RawRealloc() memory!
-TRACE_PYMEM_RAW = True
+# Define TRACE_RAW_MALLOC  (experimental option): yes, I like to call
+# PyGILState_Ensure() when the GIL is released, to track PyMem_RawMalloc() and
+# PyMem_RawRealloc() memory!
+TRACE_RAW_MALLOC = True
 
 # Debug pytracemalloc
-DEBUG = False
+DEBUG = True
 
 VERSION = '1.0dev'
 
@@ -67,13 +68,9 @@ def main():
     else:
         print("PyMem_SetAllocator: present")
 
-    library_dirs = pkg_config("glib-2.0", "--libs-only-L", 2)
-    libraries = pkg_config("glib-2.0", "--libs-only-l", 2)
-    include_dirs = pkg_config("glib-2.0", "--cflags-only-I", 2)
-    cflags = pkg_config("glib-2.0", "--cflags-only-other")
-
-    if TRACE_PYMEM_RAW:
-        cflags.append('-DTRACE_PYMEM_RAW')
+    cflags = []
+    if TRACE_RAW_MALLOC:
+        cflags.append('-DTRACE_RAW_MALLOC')
     if not DEBUG:
         cflags.append('-DNDEBUG')
 
@@ -83,8 +80,6 @@ def main():
     ext = Extension(
         '_tracemalloc',
         ['_tracemalloc.c'],
-        include_dirs=include_dirs,
-        library_dirs=library_dirs,
         libraries=libraries,
         extra_compile_args = cflags)
 
