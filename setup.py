@@ -80,7 +80,6 @@ def main():
     ext = Extension(
         '_tracemalloc',
         ['_tracemalloc.c'],
-        libraries=libraries,
         extra_compile_args = cflags)
 
     options = {
