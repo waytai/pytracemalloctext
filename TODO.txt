@@ -1,0 +1,6 @@
+Python 2.7 patch:
+
+PyAPI_FUNC(char *) _PyMem_RawStrdup(const char *str);
+PyAPI_FUNC(char *) _PyMem_Strdup(const char *str);
+
+test_tracemalloc: get_arena_size()?
