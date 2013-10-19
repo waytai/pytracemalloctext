@@ -112,6 +112,16 @@ def bench_tracing():
     dt = bench(func)
     print("trace: %.1f, %.1f times slower" % (dt, dt / base))
 
+    for n in (1, 10, 100):
+        tracemalloc.enable()
+        tasks = [tracemalloc.Task(str) for index in range(n)] # dummy callback
+        for task in tasks:
+            task.set_delay(60.0)
+            task.schedule()
+        dt = bench(func)
+        print("trace with %s task: %.1f, %.1f times slower" % (n, dt, dt / base))
+        tracemalloc.cancel_tasks()
+
     tracemalloc.add_include_filter(__file__)
     dt = bench(func)
     print("trace with filter including file: %.1f, %.1f times slower" % (dt, dt / base))
