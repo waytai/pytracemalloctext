@@ -39,17 +39,17 @@ def main():
     VERSION = tracemalloctext.__version__
 
     options = {
-        'name': 'pytracemalloc_text',
+        'name': 'pytracemalloctext',
         'version': VERSION,
         'license': 'MIT license',
         'description': 'Track memory allocations per Python file',
         'long_description': long_description,
         'url': 'http://www.wyplay.com/',
-        'download_url': 'https://github.com/haypo/pytracemalloc_text',
+        'download_url': 'https://github.com/haypo/pytracemalloctext',
         'author': 'Victor Stinner',
         'author_email': 'victor.stinner@gmail.com',
         'classifiers': CLASSIFIERS,
-        'py_modules': ["tracemalloc_text"],
+        'py_modules': ["tracemalloctext"],
     }
     setup(**options)
 
