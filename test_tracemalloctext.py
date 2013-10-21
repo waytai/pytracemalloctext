@@ -84,7 +84,7 @@ class TestTracemallocEnabled(unittest.TestCase):
             self.skipTest("tracemalloc must be disabled before the test")
 
         tracemalloc.clear_filters()
-        tracemalloc.add_exclude_filter(tracemalloc.__file__)
+        tracemalloc.add_exclusive_filter(tracemalloc.__file__)
         tracemalloc.set_traceback_limit(1)
         tracemalloc.enable()
 

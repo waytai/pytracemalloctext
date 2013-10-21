@@ -120,6 +120,51 @@ def _format_traceback(traceback, filename_parts, color):
     return lines
 
 
+def add_process_memory_metrics(snapshot):
+    process_memory = get_process_memory()
+    if process_memory is not None:
+        snapshot.add_metric('process_memory.rss', process_memory[0], 'size')
+        snapshot.add_metric('process_memory.vms', process_memory[1], 'size')
+
+def add_unicode_metrics(snapshot):
+    unicode_interned = get_unicode_interned()
+    snapshot.add_metric('unicode_interned.size', unicode_interned[0], 'size')
+    snapshot.add_metric('unicode_interned.len', unicode_interned[1], 'int')
+
+def add_pymalloc_metrics(snapshot):
+    snapshot.add_metric('pymalloc.blocks', sys.getallocatedblocks(), 'int')
+    if hasattr(_tracemalloc, 'get_pymalloc_stats'):
+        pymalloc = _tracemalloc.get_pymalloc_stats()
+
+        size = pymalloc['arenas'] * pymalloc['arena_size']
+        snapshot.add_metric('pymalloc.size', size, 'size')
+
+        size = pymalloc['max_arenas'] * pymalloc['arena_size']
+        snapshot.add_metric('pymalloc.max_size', size, 'size')
+
+        data = pymalloc['allocated_bytes']
+        snapshot.add_metric('pymalloc.allocated', data, 'size')
+
+        free = pymalloc['available_bytes']
+        free += pymalloc['free_pools'] * pymalloc['pool_size']
+        snapshot.add_metric('pymalloc.free', free, 'size')
+
+        size = (data + free)
+        if size:
+            fragmentation = free / size
+            snapshot.add_metric('pymalloc.fragmentation', fragmentation, 'percent')
+
+def add_gc_metrics(snapshot):
+    snapshot.add_metric('gc.objects', len(gc.get_objects()), 'int')
+
+def add_metrics(snapshot):
+    snapshot.add_process_memory_metrics()
+    snapshot.add_unicode_metrics()
+    snapshot.add_pymalloc_metrics()
+    snapshot.add_gc_metrics()
+    # tracemalloc metrics uses the traces attribute
+    snapshot.add_tracemalloc_metrics()
+
 class DisplayTop:
     def __init__(self):
         self.size = True
@@ -354,8 +399,9 @@ class DisplayTop:
             traces = (tracemalloc.get_traceback_limit() > 1)
         else:
             traces = False
-        snapshot = tracemalloc.Snapshot.create(traces=traces,
-                                               metrics=self.metrics)
+        snapshot = tracemalloc.Snapshot.create(traces=traces)
+        if self.metrics:
+            add_metrics(snapshot)
         if callback is not None:
             callback(snapshot)
 
@@ -633,8 +679,9 @@ class TakeSnapshotTask(Task):
         return filename
 
     def take_snapshot(self):
-        snapshot = tracemalloc.Snapshot.create(traces=self.traces,
-                                               metrics=self.metrics)
+        snapshot = tracemalloc.Snapshot.create(traces=self.traces)
+        if self.metrics:
+            add_metrics(snapshot)
         if self.callback is not None:
             self.callback(snapshot)
 
