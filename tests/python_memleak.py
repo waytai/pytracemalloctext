@@ -53,12 +53,13 @@ See also:
 """
 import gc
 import sys
-import tracemalloc_text
+import tracemalloc
+import tracemalloctext
 
-tracemalloc_text.add_exclude_filter(tracemalloc_text.__file__)
-tracemalloc_text.enable()
+tracemalloc.add_exclusive_filter(tracemalloctext.__file__)
+tracemalloc.enable()
 
-task = tracemalloc_text.DisplayTopTask(10)
+task = tracemalloctext.DisplayTopTask(10)
 #task.start(60)
 
 def dump_memory():
