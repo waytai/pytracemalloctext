@@ -11,6 +11,8 @@ try:
 except ImportError:
     from time import time as _time_monotonic
 
+__version__ = '0.92'
+
 def _format_timestamp(timestamp):
     return str(timestamp).split(".", 1)[0]
 

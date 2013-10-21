@@ -2,11 +2,10 @@
 
 # Todo list to prepare a release:
 #  - run unit tests
-#  - update VERSION in _tracemalloc.c and setup.py
-#  - reset option in setup.py: DEBUG=False
+#  - update __version__ in tracemalloctext.py
 #  - set release date in the README.rst file
 #  - git commit -a
-#  - git tag -a pytracemalloc-VERSION
+#  - git tag -a VERSION
 #  - git push --tags
 #  - python setup.py register sdist upload
 #
@@ -17,21 +16,7 @@
 #  - git push
 
 from __future__ import with_statement
-from distutils.core import setup, Extension
-import ctypes
-import os
-import subprocess
-import sys
-
-# Define TRACE_RAW_MALLOC  (experimental option): yes, I like to call
-# PyGILState_Ensure() when the GIL is released, to track PyMem_RawMalloc() and
-# PyMem_RawRealloc() memory!
-TRACE_RAW_MALLOC = True
-
-# Debug pytracemalloc
-DEBUG = True
-
-VERSION = '1.0dev'
+from distutils.core import setup
 
 CLASSIFIERS = [
     'Development Status :: 3 - Alpha',
@@ -46,55 +31,25 @@ CLASSIFIERS = [
     'Topic :: Software Development :: Libraries :: Python Modules',
 ]
 
-def pkg_config(name, arg, strip_prefix=0):
-    args = ['pkg-config', name, arg]
-    process = subprocess.Popen(args,
-                               stdout=subprocess.PIPE,
-                               universal_newlines=True)
-    stdout, stderr = process.communicate()
-    exitcode = process.wait()
-    if exitcode:
-        sys.exit(exitcode)
-    args = stdout.strip().split()
-    if strip_prefix:
-        args = [item[strip_prefix:] for item in args]
-    return args
-
 def main():
-    pythonapi = ctypes.cdll.LoadLibrary(None)
-    if not hasattr(pythonapi, 'PyMem_SetAllocator'):
-        print("PyMem_SetAllocator: missing, %s has not been patched" % sys.executable)
-        sys.exit(1)
-    else:
-        print("PyMem_SetAllocator: present")
-
-    cflags = []
-    if TRACE_RAW_MALLOC:
-        cflags.append('-DTRACE_RAW_MALLOC')
-    if not DEBUG:
-        cflags.append('-DNDEBUG')
-
     with open('README.rst') as f:
         long_description = f.read().strip()
 
-    ext = Extension(
-        '_tracemalloc',
-        ['_tracemalloc.c'],
-        extra_compile_args = cflags)
+    import tracemalloctext
+    VERSION = tracemalloctext.__version__
 
     options = {
-        'name': 'pytracemalloc',
+        'name': 'pytracemalloc_text',
         'version': VERSION,
         'license': 'MIT license',
         'description': 'Track memory allocations per Python file',
         'long_description': long_description,
         'url': 'http://www.wyplay.com/',
-        'download_url': 'https://github.com/wyplay/pytracemalloc',
+        'download_url': 'https://github.com/haypo/pytracemalloc_text',
         'author': 'Victor Stinner',
-        'author_email': 'vstinner@wyplay.com',
-        'ext_modules': [ext],
+        'author_email': 'victor.stinner@gmail.com',
         'classifiers': CLASSIFIERS,
-        'py_modules': ["tracemalloc"],
+        'py_modules': ["tracemalloc_text"],
     }
     setup(**options)
 
