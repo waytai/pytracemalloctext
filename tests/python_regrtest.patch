@@ -1,0 +1,69 @@
+diff -r 290ba99b2be0 Lib/test/regrtest.py
+--- a/Lib/test/regrtest.py	Mon Oct 21 21:41:17 2013 +0200
++++ b/Lib/test/regrtest.py	Mon Oct 21 21:41:48 2013 +0200
+@@ -456,6 +456,54 @@ def run_test_in_subprocess(testname, ns)
+     return retcode, stdout, stderr
+ 
+ 
++def tracemalloc_task(fast=False, traces=True):
++    import gc
++    import time
++    import traceback
++    import tracemalloc
++    import tracemalloctext
++
++    if traces:
++        tracemalloc.set_traceback_limit(25)
++
++    top = tracemalloctext.DisplayTop()
++    take = tracemalloctext.TakeSnapshotTask(traces=traces)
++
++    stream = sys.__stderr__
++    def taskfunc(take, top, stream, monotonic, count):
++        try:
++            start = monotonic()
++            snapshot, filename = take.take_snapshot()
++            dt = monotonic() - start
++            stream.write("%s: Write a snapshot of memory allocations into %s (%.1f sec)\n"
++                             % (snapshot.timestamp, filename, dt))
++            stream.flush()
++
++            top.display_snapshot(snapshot, count, file=stream)
++        except Exception as err:
++            stream.write("Failed to take a snapshot: %s\n" % err)
++            text = traceback.format_exc().rstrip()
++            for line in text.splitlines():
++                stream.write("> %s\n" % line)
++            stream.flush()
++
++    take.filename_template = "/tmp/tracemalloc-$pid-$counter.pickle"
++    if fast:
++        delay = 10
++        top_count = 5
++        threshold = 5 * 1024 * 1024
++    else:
++        delay = 120
++        top_count = 5
++        threshold = 5 * 1024 * 1024
++
++    task = tracemalloctext.Task(taskfunc, take, top, stream, time.monotonic, top_count)
++    task.call()
++
++    task.set_memory_threshold(threshold)
++    task.set_delay(delay)
++    task.schedule()
++
+ def main(tests=None, **kwargs):
+     """Execute a test suite.
+ 
+@@ -482,6 +530,10 @@ def main(tests=None, **kwargs):
+     # Display the Python traceback on fatal errors (e.g. segfault)
+     faulthandler.enable(all_threads=True)
+ 
++    import tracemalloc
++    if tracemalloc.is_enabled():
++        tracemalloc_task(fast=True)
++
+     # Display the Python traceback on SIGALRM or SIGUSR1 signal
+     signals = []
+     if hasattr(signal, 'SIGALRM'):
