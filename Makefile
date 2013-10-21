@@ -8,4 +8,5 @@ install: all
 
 clean:
 	rm -rf build dist *.pyc __pycache__
+	$(MAKE) -C doc clean
 

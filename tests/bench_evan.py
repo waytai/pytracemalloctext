@@ -6,10 +6,11 @@ import gc, time
 
 if 0:
     import tracemalloc
+    import tracemalloctext
 
     tracemalloc.enable()
     if 1:
-        task = tracemalloc.DisplayTopTask(10)
+        task = tracemalloctext.DisplayTopTask(10)
         task.display()
 
         def dump_memory(what):
@@ -21,13 +22,14 @@ if 0:
 
 elif 1:
     import tracemalloc
+    import tracemalloctext
 
     def task():
         size, max_size = tracemalloc.get_traced_memory()
         print("Traced memory: %.1f MB"
               % (size / 1024.0 ** 2))
 
-    tracemalloc.start_task(None, 10 * 1024 * 1024, task)
+    tracemalloctext.start_task(None, 10 * 1024 * 1024, task)
 
     def dump_memory(what):
         print("***** %s *****" % what)
