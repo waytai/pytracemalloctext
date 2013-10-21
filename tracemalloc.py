@@ -1,23 +1,15 @@
-from __future__ import with_statement
-import _tracemalloc
-import collections
-import datetime
-import functools
-import gc
+import atexit
 import linecache
-import operator
 import os
-import pickle
+import signal
 import sys
-import types
+import threading
+import tracemalloc
+import weakref
 try:
     from time import monotonic as _time_monotonic
 except ImportError:
     from time import time as _time_monotonic
-
-# Import types and functions implemented in C
-from _tracemalloc import *
-from _tracemalloc import __version__
 
 def _format_timestamp(timestamp):
     return str(timestamp).split(".", 1)[0]
@@ -125,111 +117,6 @@ def _format_traceback(traceback, filename_parts, color):
         lines.append('  File "%s", line %s' % (filename, lineno))
     return lines
 
-# On Windows, get_process_memory() is implemented in _tracemalloc
-if os.name != "nt":
-    def get_process_memory():
-        """
-        Get the memory usage of the current process as a  (rss: int, vms: int)
-        tuple, rss is the Resident Set Size in bytes and vms is the size of the
-        virtual memory in bytes
-
-        Return None if the platform is not supported.
-        """
-        if get_process_memory.support_proc == False:
-            return None
-
-        try:
-            fp = open("/proc/self/statm", "rb")
-        except IOError:
-            get_process_memory.support_proc = False
-            return None
-
-        try:
-            page_size = os.sysconf("SC_PAGE_SIZE")
-        except AttributeError:
-            get_process_memory.support_proc = False
-            return None
-
-        get_process_memory.support_proc = True
-        with fp:
-            statm = fp.readline().split()
-        vms = int(statm[0]) * page_size
-        rss = int(statm[1]) * page_size
-        return (rss, vms)
-
-    get_process_memory.support_proc = None
-
-def _stat_key(stats):
-    return (abs(stats[0]), stats[1], abs(stats[2]), stats[3], stats[4])
-
-class StatsDiff:
-    __slots__ = ('differences', 'old_stats', 'new_stats')
-
-    def __init__(self, differences, old_stats, new_stats):
-        self.differences = differences
-        self.old_stats = old_stats
-        self.new_stats = new_stats
-
-    def sort(self):
-        self.differences.sort(reverse=True, key=_stat_key)
-
-
-class GroupedStats:
-    __slots__ = ('timestamp', 'stats', 'group_by', 'cumulative', 'metrics')
-
-    def __init__(self, timestamp, stats, group_by,
-                 cumulative=False, metrics=None):
-        if group_by not in ('filename', 'line', 'address'):
-            raise ValueError("invalid group_by value")
-        # dictionary {key: stats} where stats is
-        # a (size: int, count: int) tuple
-        self.stats = stats
-        self.group_by = group_by
-        self.cumulative = cumulative
-        self.timestamp = timestamp
-        self.metrics = metrics
-
-    def _create_key(self, key):
-        if self.group_by == 'filename':
-            if key is None:
-                return ''
-        elif self.group_by == 'line':
-            filename, lineno = key
-            if filename is None:
-                filename = ''
-            if lineno is None:
-                lineno = 0
-            return (filename, lineno)
-        return key
-
-    def compare_to(self, old_stats=None):
-        if old_stats is not None:
-            previous_dict = old_stats.stats.copy()
-
-            differences = []
-            for key, stats in self.stats.items():
-                size, count = stats
-                previous = previous_dict.pop(key, None)
-                key = self._create_key(key)
-                if previous is not None:
-                    diff = (size - previous[0], size,
-                            count - previous[1], count,
-                            key)
-                else:
-                    diff = (size, size, count, count, key)
-                differences.append(diff)
-
-            for key, stats in previous_dict.items():
-                key = self._create_key(key)
-                diff = (-stats[0], 0, -stats[1], 0, key)
-                differences.append(diff)
-        else:
-            differences = [
-                (0, stats[0], 0, stats[1], self._create_key(key))
-                for key, stats in self.stats.items()]
-
-        return StatsDiff(differences, old_stats, self)
-
 
 class DisplayTop:
     def __init__(self):
@@ -272,6 +159,9 @@ class DisplayTop:
     def _format_address(self, key, color):
         return 'memory block %s' % _format_address(key, color)
 
+    def _format_traceback(self, key, color):
+        return 'memory block %s' % _format_address(key[0], color)
+
     def _format_filename_lineno(self, key, color):
         filename, lineno = key
         filename = _format_filename(filename, self.filename_parts, color)
@@ -305,10 +195,7 @@ class DisplayTop:
         else:
             new_metrics  = {}
 
-        if sys.version_info >= (3, 3):
-            names = list(old_metrics.keys() | new_metrics.keys())
-        else:
-            names = list(set(old_metrics.keys()) | set(new_metrics.keys()))
+        names = list(old_metrics.keys() | new_metrics.keys())
         names.sort()
         if not names:
             return
@@ -330,11 +217,6 @@ class DisplayTop:
                 format = new_metric.format
             else:
                 new_value = 0
-
-            if format == 'size':
-                formatter = _format_size_color
-            else:
-                text = _format_int
 
             text = self._format_metric(new_value, format)
             if color:
@@ -369,6 +251,9 @@ class DisplayTop:
         elif top_stats.group_by == 'address':
             format_key = self._format_address
             per_text = "address"
+        elif top_stats.group_by == 'traceback':
+            format_key = self._format_traceback
+            per_text = "traceback"
         else:
             format_key = self._format_filename_lineno
             per_text = "filename and line number"
@@ -396,9 +281,15 @@ class DisplayTop:
         total = [0, 0, 0, 0]
         for index in range(0, count):
             diff = diff_list[index]
-            key_text = format_key(diff[4], color)
+            key = diff[4]
+            key_text = format_key(key, color)
             diff_text = self._format_diff(diff, has_previous, show_count, color)
             log("#%s: %s: %s\n" % (1 + index, key_text, diff_text))
+            if top_stats.group_by == 'traceback':
+                for line in _format_traceback(key[1], self.filename_parts, color):
+                    log(line + "\n")
+                log("\n")
+
             total[0] += diff[0]
             total[1] += diff[1]
             total[2] += diff[2]
@@ -461,8 +352,8 @@ class DisplayTop:
             traces = (tracemalloc.get_traceback_limit() > 1)
         else:
             traces = False
-        snapshot = Snapshot.create(traces=traces,
-                                   metrics=self.metrics)
+        snapshot = tracemalloc.Snapshot.create(traces=traces,
+                                               metrics=self.metrics)
         if callback is not None:
             callback(snapshot)
 
@@ -472,6 +363,230 @@ class DisplayTop:
                               cumulative=cumulative,
                               file=file)
         return snapshot
+
+
+class _TaskThread(threading.Thread):
+    def __init__(self, task, ncall):
+        threading.Thread.__init__(self)
+        self.daemon = True
+
+        self.run_lock = threading.Lock()
+        self.stop_lock = threading.Lock()
+        self.sleep_lock = threading.Condition()
+        self._task_ref = weakref.ref(task)
+        self.memory_delay = 0.1
+        self.ncall = ncall
+
+        self.min_memory = None
+        self.max_memory = None
+        self.timeout = None
+
+    def schedule(self):
+        task = self._task_ref()
+        memory_threshold = task.get_memory_threshold()
+        delay = task.get_delay()
+
+        if memory_threshold is not None:
+            traced = tracemalloc.get_traced_memory()[0]
+            self.min_memory = traced - memory_threshold
+            self.max_memory = traced + memory_threshold
+        else:
+            self.min_memory = None
+            self.max_memory = None
+
+        if delay is not None:
+            self.timeout = _time_monotonic() + delay
+        else:
+            self.timeout = None
+
+    def interrupt_sleep(self):
+        with self.sleep_lock:
+            self.sleep_lock.notify()
+
+    def reschedule(self):
+        assert self.is_alive()
+        # FIXME: reschedule using old traced and time, not new
+        self.schedule()
+        self.interrupt_sleep()
+
+    def once(self):
+        delay = None
+
+        if self.min_memory is not None:
+            traced = tracemalloc.get_traced_memory()[0]
+            if traced <= self.min_memory:
+                return None
+            if traced >= self.max_memory:
+                return None
+            delay = self.memory_delay
+
+        if self.timeout is not None:
+            dt = (self.timeout - _time_monotonic())
+            if dt <= 0:
+                return None
+            if delay is not None:
+                delay = min(delay, dt)
+            else:
+                delay = dt
+
+        return delay
+
+    def _run(self):
+        if hasattr(signal, 'pthread_sigmask'):
+            # this thread should not handle any signal
+            mask = range(1, signal.NSIG)
+            signal.pthread_sigmask(signal.SIG_BLOCK, mask)
+
+        self.schedule()
+
+        while self.stop_lock.acquire(0):
+            self.stop_lock.release()
+            delay = self.once()
+            if delay is not None:
+                assert delay > 0.0
+                with self.sleep_lock:
+                    interrupted = self.sleep_lock.wait(timeout=delay)
+                if interrupted:
+                    break
+                continue
+
+            task = self._task_ref()
+            try:
+                task.call()
+            except Exception as err:
+                # the task is not rescheduled on error
+                exc_type, exc_value, exc_tb = sys.exc_info()
+                # FIXME: log the traceback
+                print(("%s: %s" % (exc_type, exc_value)), file=sys.stderr)
+                break
+            if self.ncall is not None:
+                self.ncall -= 1
+                if self.ncall <= 0:
+                    break
+            self.schedule()
+
+    def run(self):
+        with self.run_lock:
+            self._run()
+
+    def stop(self):
+        if not self.is_alive():
+            return
+
+        # ask to stop the thread
+        self.stop_lock.acquire()
+
+        # interrupt sleep
+        self.interrupt_sleep()
+
+        # wait until run() exited
+        self.run_lock.acquire()
+
+        # release locks
+        self.run_lock.release()
+        self.stop_lock.release()
+
+    def _task(self):
+        pass
+
+_scheduled_tasks = {}
+
+def get_tasks():
+    tasks = []
+    refs = list(_scheduled_tasks.values())
+    for ref in refs:
+        task = ref()
+        if task is None:
+            continue
+        tasks.append(task)
+    return tasks
+
+def cancel_tasks():
+    tasks = get_tasks()
+    for task in tasks:
+        task.cancel()
+    _scheduled_tasks.clear()
+cancel_tasks._registered = False
+
+
+class Task:
+    def __init__(self, func, *args, **kwargs):
+        self._thread = None
+        self._memory_threshold = None
+        self._delay = None
+        self._func_ref = weakref.ref(func)
+        self.func_args = args
+        self.func_kwargs = kwargs
+
+    def __del__(self):
+        self.cancel()
+
+    def _get_func(self):
+        return self._func_ref()
+    def _set_func(self, func):
+        self._func_ref = weakref.ref(func)
+    func = property(_get_func, _set_func)
+
+    def call(self):
+        func = self._func_ref()
+        func(*self.func_args, **self.func_kwargs)
+
+    def get_delay(self):
+        return self._delay
+
+    def _cancel(self):
+        self._thread.stop()
+        self._thread.join()
+        self._thread = None
+        del _scheduled_tasks[id(self)]
+
+    def is_scheduled(self):
+        if self._thread is None:
+            return False
+        if not self._thread.is_alive():
+            self._cancel()
+            return False
+        return True
+
+    def _reschedule(self):
+        if self.is_scheduled():
+            self._thread.reschedule()
+
+    def set_delay(self, delay):
+        if delay <= 0.0:
+            raise ValueError("delay must greater than 0")
+        self._delay = delay
+        self._reschedule()
+
+    def get_memory_threshold(self):
+        return self._memory_threshold
+
+    def set_memory_threshold(self, size):
+        if size < 1:
+            raise ValueError("threshold must greater than 0")
+        self._memory_threshold = size
+        self._reschedule()
+
+    def schedule(self, ncall=None):
+        if self._delay is None and self._memory_threshold is None:
+            raise ValueError("need a delay or a memory threshold")
+
+        if not tracemalloc.is_enabled():
+            raise RuntimeError("the tracemalloc module must be enabled "
+                               "to schedule a task")
+
+        self.cancel()
+        self._thread = _TaskThread(self, ncall)
+        self._thread.start()
+        _scheduled_tasks[id(self)] = weakref.ref(self)
+        if not cancel_tasks._registered:
+            cancel_tasks._registered = True
+            atexit.register(cancel_tasks)
+
+    def cancel(self):
+        if self._thread is None:
+            return
+        self._cancel()
 
 
 class DisplayTopTask(Task):
@@ -492,271 +607,6 @@ class DisplayTopTask(Task):
                                         self.callback)
 
 
-def _compute_stats_frame(stats, group_per_file, size, frame):
-    if not group_per_file:
-        if frame is not None:
-            key = frame
-        else:
-            key = (None, None)
-    else:
-        if frame is not None:
-            key = frame[0]
-        else:
-            key = None
-    if key in stats:
-        stat_size, count = stats[key]
-        size += stat_size
-        count = count + 1
-    else:
-        count = 1
-    stats[key] = (size, count)
-
-
-class Metric:
-    __slots__ = ('name', 'value', 'format')
-
-    def __init__(self, name, value, format):
-        self.name = name
-        self.value = value
-        self.format = format
-
-    def __eq__(self, other):
-        return (self.name == other.name and self.value == other.value)
-
-    def __repr__(self):
-        return ('<Metric name=%r value=%r format=%r>'
-                % (self.name, self.value, self.format))
-
-
-class Snapshot:
-    FORMAT_VERSION = (3, 4)
-    __slots__ = ('timestamp', 'pid', 'traceback_limit',
-                 'stats', 'traces', 'metrics')
-
-    def __init__(self, timestamp, pid, traceback_limit,
-                 stats=None, traces=None, metrics=None):
-        if traces is None and stats is None:
-            raise ValueError("traces and stats cannot be None at the same time")
-        self.timestamp = timestamp
-        self.pid = pid
-        self.traceback_limit = traceback_limit
-        self.stats = stats
-        self.traces = traces
-        if metrics:
-            self.metrics = metrics
-        else:
-            self.metrics = {}
-
-    def add_metric(self, name, value, format):
-        if name in self.metrics:
-            raise ValueError("name already present: %r" % (name,))
-        metric = Metric(name, value, format)
-        self.metrics[metric.name] = metric
-        return metric
-
-    def add_tracemalloc_metrics(self):
-        size, max_size = get_traced_memory()
-        self.add_metric('tracemalloc.traced.size', size, 'size')
-        self.add_metric('tracemalloc.traced.max_size', max_size, 'size')
-
-        if self.traces:
-            self.add_metric('tracemalloc.traces', len(self.traces), 'int')
-
-        size, free = get_tracemalloc_memory()
-        self.add_metric('tracemalloc.module.size', size, 'size')
-        self.add_metric('tracemalloc.module.free', free, 'size')
-        if size:
-            frag = free / size
-            self.add_metric('tracemalloc.module.fragmentation', frag, 'percent')
-
-    def add_process_memory_metrics(self):
-        process_memory = get_process_memory()
-        if process_memory is not None:
-            self.add_metric('process_memory.rss', process_memory[0], 'size')
-            self.add_metric('process_memory.vms', process_memory[1], 'size')
-
-    def add_gc_metrics(self):
-        self.add_metric('gc.objects', len(gc.get_objects()), 'int')
-
-    def get_metric(self, name, default=None):
-        if name in self.metrics:
-            return self.metrics[name].value
-        else:
-            return default
-
-    @classmethod
-    def create(cls, traces=False, metrics=True):
-        if not is_enabled():
-            raise RuntimeError("the tracemalloc module must be enabled "
-                               "to take a snapshot")
-        timestamp = datetime.datetime.now()
-        pid = os.getpid()
-        traceback_limit = get_traceback_limit()
-        if traces:
-            traces = get_traces()
-        else:
-            traces = None
-        stats = get_stats()
-
-        snapshot = cls(timestamp, pid, traceback_limit, stats, traces)
-        if metrics:
-            snapshot.add_tracemalloc_metrics()
-            snapshot.add_gc_metrics()
-            snapshot.add_process_memory_metrics()
-        return snapshot
-
-    @classmethod
-    def load(cls, filename, traces=True):
-        with open(filename, "rb") as fp:
-            data = pickle.load(fp)
-
-            try:
-                if data['format_version'] != cls.FORMAT_VERSION:
-                    raise TypeError("unknown format version")
-
-                timestamp = data['timestamp']
-                pid = data['pid']
-                stats = data['stats']
-                traceback_limit = data['traceback_limit']
-                metrics = data.get('metrics')
-            except KeyError:
-                raise TypeError("invalid file format")
-
-            if traces:
-                traces = pickle.load(fp)
-            else:
-                traces = None
-
-        return cls(timestamp, pid, traceback_limit, stats, traces, metrics)
-
-    def write(self, filename):
-        data = {
-            'format_version': self.FORMAT_VERSION,
-            'timestamp': self.timestamp,
-            'pid': self.pid,
-            'traceback_limit': self.traceback_limit,
-            'stats': self.stats,
-        }
-        if self.metrics:
-            data['metrics'] = self.metrics
-
-        try:
-            with open(filename, "wb") as fp:
-                pickle.dump(data, fp, pickle.HIGHEST_PROTOCOL)
-                pickle.dump(self.traces, fp, pickle.HIGHEST_PROTOCOL)
-        except:
-            # Remove corrupted pickle file
-            if os.path.exists(filename):
-                os.unlink(filename)
-            raise
-
-    def _filter_traces(self, include, filters):
-        new_traces = {}
-        for address, trace in self.traces.items():
-            if include:
-                match = any(trace_filter.match_traceback(trace[1])
-                            for trace_filter in filters)
-            else:
-                match = all(trace_filter.match_traceback(trace[1])
-                            for trace_filter in filters)
-            if match:
-                new_traces[address] = trace
-        return new_traces
-
-    def _filter_stats(self, include, filters):
-        file_stats = {}
-        for filename, line_stats in self.stats.items():
-            if include:
-                match = any(trace_filter.match_filename(filename)
-                            for trace_filter in filters)
-            else:
-                match = all(trace_filter.match_filename(filename)
-                            for trace_filter in filters)
-            if not match:
-                continue
-
-            new_line_stats = {}
-            for lineno, line_stat in line_stats.items():
-                if include:
-                    match = any(trace_filter.match(filename, lineno)
-                                for trace_filter in filters)
-                else:
-                    match = all(trace_filter.match(filename, lineno)
-                                for trace_filter in filters)
-                if match:
-                    new_line_stats[lineno] = line_stat
-
-            file_stats[filename] = new_line_stats
-        return file_stats
-
-    def _apply_filters(self, include, filters):
-        if not filters:
-            return
-        self.stats = self._filter_stats(include, filters)
-        if self.traces is not None:
-            self.traces = self._filter_traces(include, filters)
-
-    def apply_filters(self, filters):
-        include_filters = []
-        exclude_filters = []
-        for trace_filter in filters:
-            if trace_filter.include:
-                include_filters.append(trace_filter)
-            else:
-                exclude_filters.append(trace_filter)
-        self._apply_filters(True, include_filters)
-        self._apply_filters(False, exclude_filters)
-
-    def top_by(self, group_by, cumulative=False):
-        if cumulative and self.traceback_limit < 2:
-            cumulative = False
-
-        stats = {}
-        if group_by == 'address':
-            cumulative = False
-
-            if self.traces is None:
-                raise ValueError("need traces")
-
-            for address, trace in self.traces.items():
-                stats[address] = (trace[0], 1)
-        else:
-            if group_by == 'filename':
-                group_per_file = True
-            elif group_by == 'line':
-                group_per_file = False
-            else:
-                raise ValueError("unknown group_by value: %r" % (group_by,))
-
-            if not cumulative:
-                for filename, line_dict in self.stats.items():
-                    if not group_per_file:
-                        for lineno, line_stats in line_dict.items():
-                            key = (filename, lineno)
-                            stats[key] = line_stats
-                    else:
-                        key = filename
-                        total_size = total_count = 0
-                        for size, count in line_dict.values():
-                            total_size += size
-                            total_count += count
-                        stats[key] = (total_size, total_count)
-            else:
-                if self.traces is None:
-                    raise ValueError("need traces")
-
-                for trace in self.traces.values():
-                    size, traceback = trace
-                    if traceback:
-                        for frame in traceback:
-                            _compute_stats_frame(stats, group_per_file, size, frame)
-                    else:
-                        _compute_stats_frame(stats, group_per_file, size, None)
-
-        return GroupedStats(self.timestamp, stats, group_by,
-                            cumulative, self.metrics)
-
-
 class TakeSnapshotTask(Task):
     def __init__(self, filename_template="tracemalloc-$counter.pickle",
                  traces=False, metrics=True,
@@ -770,7 +620,7 @@ class TakeSnapshotTask(Task):
 
     def create_filename(self, snapshot):
         filename = self.filename_template
-        filename = filename.replace("$pid", str(snapshot.pid))
+        filename = filename.replace("$pid", str(os.getpid()))
 
         timestamp = _format_timestamp(snapshot.timestamp)
         timestamp = timestamp.replace(" ", "-")
@@ -781,8 +631,8 @@ class TakeSnapshotTask(Task):
         return filename
 
     def take_snapshot(self):
-        snapshot = Snapshot.create(traces=self.traces,
-                                   metrics=self.metrics)
+        snapshot = tracemalloc.Snapshot.create(traces=self.traces,
+                                               metrics=self.metrics)
         if self.callback is not None:
             self.callback(snapshot)
 
@@ -866,7 +716,9 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    if options.address or options.traceback:
+    if options.traceback:
+        group_by = "traceback"
+    elif options.address:
         group_by = "address"
     elif options.file:
         group_by = "filename"
@@ -888,7 +740,7 @@ def main():
             else:
                 pattern = value
                 lineno = None
-            filters.add(Filter(include, pattern, lineno, traceback))
+            filters.add(tracemalloc.Filter(include, pattern, lineno, traceback))
 
     def log(message, *args):
         if args:
@@ -908,7 +760,7 @@ def main():
             load_text = "Load snapshot %s without traces" % filename
         log(load_text)
         try:
-            snapshot = Snapshot.load(filename, load_traces)
+            snapshot = tracemalloc.Snapshot.load(filename, load_traces)
         except Exception:
             err = sys.exc_info()[1]
             print("ERROR: Failed to load %s: [%s] %s"
@@ -945,12 +797,6 @@ def main():
         snapshots.append(snapshot)
     snapshots.sort(key=lambda snapshot: snapshot.timestamp)
 
-    pids = set(snapshot.pid for snapshot in snapshots)
-    if len(pids) > 1:
-        pids = ', '.join(map(str, sorted(pids)))
-        print("WARNING: Traces generated by different processes: %s" % pids)
-        print("")
-
     stream = sys.stdout
     if options.color:
         color = True
@@ -981,38 +827,6 @@ def main():
             if trace is not None:
                 for line in _format_traceback(trace[1], options.filename_parts, color):
                     print(line)
-
-    elif options.traceback:
-        for snapshot in snapshots:
-            log("Sort traces of snapshot %s",
-                _format_timestamp(snapshot.timestamp))
-            traces = [(trace[0], address, trace[1])
-                      for address, trace in snapshot.traces.items()]
-            traces.sort(reverse=True)
-            displayed_traces = traces[:options.number]
-
-            timestamp = _format_timestamp(snapshot.timestamp)
-            number = len(displayed_traces)
-            if color:
-                number = _FORMAT_BOLD % number
-            log("")
-            print("%s: Traceback of the top %s biggest memory blocks"
-                  % (timestamp, number))
-            print()
-
-            for size, address, traceback in displayed_traces:
-                address = _format_address(address, color)
-                size = _format_size_color(size, color)
-                print("Memory block %s: %s" % (address, size))
-                for line in _format_traceback(traceback, options.filename_parts, color):
-                    print(line)
-                print()
-
-            ignored = len(traces) - len(displayed_traces)
-            if ignored:
-                ignored_size = sum(size for size, address, traceback in traces[options.number:])
-                size = _format_size_color(ignored_size, color)
-                print("%s more memory blocks: size=%s" % (ignored, size))
 
     else:
         top = DisplayTop()
