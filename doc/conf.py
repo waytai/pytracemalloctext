@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# pytracemalloc documentation build configuration file, created by
+# pytracemalloc_text documentation build configuration file, created by
 # sphinx-quickstart on Fri Oct  4 11:32:03 2013.
 #
 # This file is execfile()d with the current directory set to its containing dir.
@@ -40,7 +40,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'pytracemalloc'
+project = u'pytracemalloc_text'
 copyright = u'2013, Victor Stinner'
 
 # The version info for the project you're documenting, acts as replacement for
@@ -164,7 +164,7 @@ html_static_path = []
 #html_file_suffix = None
 
 # Output file base name for HTML help builder.
-htmlhelp_basename = 'pytracemallocdoc'
+htmlhelp_basename = 'pytracemalloc_textdoc'
 
 
 # -- Options for LaTeX output --------------------------------------------------
@@ -183,7 +183,7 @@ latex_elements = {
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
-  ('index', 'pytracemalloc.tex', u'pytracemalloc Documentation',
+  ('index', 'pytracemalloc_text.tex', u'pytracemalloc_text Documentation',
    u'Victor Stinner', 'manual'),
 ]
 
@@ -213,7 +213,7 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('tracemalloc', 'pytracemalloc', u'pytracemalloc Documentation',
+    ('tracemalloc_text', 'pytracemalloc_text', u'pytracemalloc_text Documentation',
      [u'Victor Stinner'], 1)
 ]
 
@@ -227,8 +227,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-  ('tracemalloc', 'pytracemalloc', u'pytracemalloc Documentation',
-   u'Victor Stinner', 'pytracemalloc', 'One line description of project.',
+  ('tracemalloc_text', 'pytracemalloc_text', u'pytracemalloc_text Documentation',
+   u'Victor Stinner', 'pytracemalloc_text', 'One line description of project.',
    'Miscellaneous'),
 ]
 
