@@ -213,11 +213,6 @@ DisplayTop
       Display a snapshot of memory blocks allocated by Python, *snapshot* is a
       :class:`Snapshot` instance.
 
-   .. method:: display_top_diff(top_diff, count=10, file=None)
-
-      Display differences between two :class:`GroupedStats` instances,
-      *top_diff* is a :class:`StatsDiff` instance.
-
    .. method:: display_top_stats(top_stats, count=10, file=None)
 
       Display the top of allocated memory blocks grouped by the

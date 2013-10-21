@@ -1,4 +1,5 @@
 import atexit
+import gc
 import linecache
 import os
 import signal
@@ -121,49 +122,56 @@ def _format_traceback(traceback, filename_parts, color):
 
 
 def add_process_memory_metrics(snapshot):
-    process_memory = get_process_memory()
-    if process_memory is not None:
-        snapshot.add_metric('process_memory.rss', process_memory[0], 'size')
-        snapshot.add_metric('process_memory.vms', process_memory[1], 'size')
+    # FIXME: support more platforms
+    if sys.platform != "linux":
+        return
 
-def add_unicode_metrics(snapshot):
-    unicode_interned = get_unicode_interned()
-    snapshot.add_metric('unicode_interned.size', unicode_interned[0], 'size')
-    snapshot.add_metric('unicode_interned.len', unicode_interned[1], 'int')
+    page_size = os.sysconf("SC_PAGE_SIZE")
+    metrics = {}
+    with open("/proc/self/status", "rb") as  fp:
+        for line in fp:
+            if not line.startswith(b"Vm"):
+                continue
+            key, value = line.split(b":")
+            key = key[2:].decode("ascii")
+            value = value.strip()
+            if not value.endswith(b" kB"):
+                continue
+            value = int(value[:-3]) * 1024
+            metrics[key] = (value, 'size')
+
+    for key, value_format in metrics.items():
+        value, format = value_format
+        snapshot.add_metric('process_memory.%s' % key, value, format)
 
 def add_pymalloc_metrics(snapshot):
+    # FIXME: test python version
     snapshot.add_metric('pymalloc.blocks', sys.getallocatedblocks(), 'int')
-    if hasattr(_tracemalloc, 'get_pymalloc_stats'):
-        pymalloc = _tracemalloc.get_pymalloc_stats()
-
-        size = pymalloc['arenas'] * pymalloc['arena_size']
-        snapshot.add_metric('pymalloc.size', size, 'size')
-
-        size = pymalloc['max_arenas'] * pymalloc['arena_size']
-        snapshot.add_metric('pymalloc.max_size', size, 'size')
-
-        data = pymalloc['allocated_bytes']
-        snapshot.add_metric('pymalloc.allocated', data, 'size')
-
-        free = pymalloc['available_bytes']
-        free += pymalloc['free_pools'] * pymalloc['pool_size']
-        snapshot.add_metric('pymalloc.free', free, 'size')
-
-        size = (data + free)
-        if size:
-            fragmentation = free / size
-            snapshot.add_metric('pymalloc.fragmentation', fragmentation, 'percent')
 
 def add_gc_metrics(snapshot):
     snapshot.add_metric('gc.objects', len(gc.get_objects()), 'int')
 
+def add_tracemalloc_metrics(snapshot):
+    size, max_size = tracemalloc.get_traced_memory()
+    snapshot.add_metric('tracemalloc.traced.size', size, 'size')
+    snapshot.add_metric('tracemalloc.traced.max_size', max_size, 'size')
+
+    if snapshot.traces:
+        snapshot.add_metric('tracemalloc.traces', len(snapshot.traces), 'int')
+
+    size, free = tracemalloc.get_tracemalloc_memory()
+    snapshot.add_metric('tracemalloc.module.size', size, 'size')
+    snapshot.add_metric('tracemalloc.module.free', free, 'size')
+    if size:
+        frag = free / size
+        snapshot.add_metric('tracemalloc.module.fragmentation', frag, 'percent')
+
 def add_metrics(snapshot):
-    snapshot.add_process_memory_metrics()
-    snapshot.add_unicode_metrics()
-    snapshot.add_pymalloc_metrics()
-    snapshot.add_gc_metrics()
+    add_process_memory_metrics(snapshot)
+    add_pymalloc_metrics(snapshot)
+    add_gc_metrics(snapshot)
     # tracemalloc metrics uses the traces attribute
-    snapshot.add_tracemalloc_metrics()
+    add_tracemalloc_metrics(snapshot)
 
 class DisplayTop:
     def __init__(self):
@@ -275,7 +283,10 @@ class DisplayTop:
                 text = '%s (%s)' % (text, diff)
             log("%s: %s\n" % (name, text))
 
-    def display_top_diff(self, top_diff, count=10, file=None):
+    def display_top_stats(self, top_stats, count=10, file=None):
+        previous_top_stats = self.previous_top_stats
+        diff_list = top_stats.compare_to(previous_top_stats)
+
         if file is None:
             file = sys.stdout
         log = file.write
@@ -283,10 +294,7 @@ class DisplayTop:
             color = file.isatty()
         else:
             color = self.color
-        diff_list = top_diff.differences
-        top_stats = top_diff.new_stats
-        previous_top_stats = top_diff.old_stats
-        has_previous = (top_diff.old_stats is not None)
+        has_previous = (previous_top_stats is not None)
         if top_stats.group_by == 'address':
             show_count = False
         else:
@@ -320,9 +328,6 @@ class DisplayTop:
         if color:
             name = _FORMAT_BOLD % name
         file.write("%s: %s\n" % (name, text))
-
-        # Sort differences by size and then by count
-        top_diff.sort()
 
         # Display items
         total = [0, 0, 0, 0]
@@ -381,10 +386,6 @@ class DisplayTop:
         else:
             if self.previous_top_stats is None:
                 self.previous_top_stats = top_stats
-
-    def display_top_stats(self, top_stats, count=10, file=None):
-        top_diff = top_stats.compare_to(self.previous_top_stats)
-        self.display_top_diff(top_diff, count=count, file=file)
 
     def display_snapshot(self, snapshot, count=10, group_by="line",
                          cumulative=False, file=None):
@@ -686,7 +687,7 @@ class TakeSnapshotTask(Task):
             self.callback(snapshot)
 
         filename = self.create_filename(snapshot)
-        snapshot.write(filename)
+        snapshot.dump(filename)
         return snapshot, filename
 
 

@@ -21,14 +21,6 @@ def noop(*args, **kw):
 def create_snapshots():
     traceback_limit = 2
 
-    traceback_a_2 = [('a.py', 2),
-                     ('b.py', 4)]
-    traceback_a_5 = [('a.py', 5),
-                     ('b.py', 4)]
-    traceback_b_1 = [('b.py', 1)]
-    traceback_c_578 = [('c.py', 30)]
-    traceback_none_none = [(None, None)]
-
     timestamp = datetime.datetime(2013, 9, 12, 15, 16, 17)
     stats = {
         'a.py': {2: (30, 3),
@@ -37,15 +29,15 @@ def create_snapshots():
         None: {None: (7, 1)},
     }
     traces = {
-        0x10001: (10, traceback_a_2),
-        0x10002: (10, traceback_a_2),
-        0x10003: (10, traceback_a_2),
+        0x10001: (10, (('a.py', 2), ('b.py', 4))),
+        0x10002: (10, (('a.py', 2), ('b.py', 4))),
+        0x10003: (10, (('a.py', 2), ('b.py', 4))),
 
-        0x20001: (2, traceback_a_5),
+        0x20001: (2, (('a.py', 5), ('b.py', 4))),
 
-        0x30001: (66, traceback_b_1),
+        0x30001: (66, (('b.py', 1),)),
 
-        0x40001: (7, traceback_none_none),
+        0x40001: (7, ((None, None),)),
     }
     snapshot = tracemalloc.Snapshot(timestamp, traceback_limit,
                                     stats, traces)
@@ -60,14 +52,14 @@ def create_snapshots():
         'c.py': {578: (400, 1)},
     }
     traces2 = {
-        0x10001: (10, traceback_a_2),
-        0x10002: (10, traceback_a_2),
-        0x10003: (10, traceback_a_2),
+        0x10001: (10, (('a.py', 2), ('b.py', 4))),
+        0x10002: (10, (('a.py', 2), ('b.py', 4))),
+        0x10003: (10, (('a.py', 2), ('b.py', 4))),
 
-        0x20001: (2, traceback_a_5),
-        0x20002: (5000, traceback_a_5),
+        0x20001: (2, (('a.py', 5), ('b.py', 4))),
+        0x20002: (5000, (('a.py', 5), ('b.py', 4))),
 
-        0x30001: (400, traceback_c_578),
+        0x30001: (400, (('c.py', 30),)),
     }
     snapshot2 = tracemalloc.Snapshot(timestamp2, traceback_limit,
                                      stats2, traces2)
@@ -242,169 +234,6 @@ class TestTracemallocEnabled(unittest.TestCase):
 class TestTop(unittest.TestCase):
     maxDiff = 2048
 
-    def test_snapshot_top_by_line(self):
-        snapshot, snapshot2 = create_snapshots()
-
-        # stats per file and line
-        top_stats = snapshot.top_by('line')
-        self.assertEqual(top_stats.stats, {
-            ('a.py', 2): (30, 3),
-            ('a.py', 5): (2, 1),
-            ('b.py', 1): (66, 1),
-            (None, None): (7, 1),
-        })
-        self.assertEqual(top_stats.group_by, 'line')
-        self.assertEqual(top_stats.timestamp, snapshot.timestamp)
-        self.assertEqual(top_stats.cumulative, False)
-        self.assertEqual(top_stats.metrics, snapshot.metrics)
-
-        # stats per file and line (2)
-        top_stats2 = snapshot2.top_by('line')
-        self.assertEqual(top_stats2.stats, {
-            ('a.py', 2): (30, 3),
-            ('a.py', 5): (5002, 2),
-            ('c.py', 578): (400, 1),
-        })
-        self.assertEqual(top_stats2.group_by, 'line')
-        self.assertEqual(top_stats2.timestamp, snapshot2.timestamp)
-        self.assertEqual(top_stats2.cumulative, False)
-        self.assertEqual(top_stats2.metrics, snapshot2.metrics)
-
-        # stats diff per file and line
-        top_diff = top_stats2.compare_to(top_stats)
-        self.assertIsInstance(top_diff, tracemalloc.StatsDiff)
-        top_diff.sort()
-        self.assertEqual(top_diff.differences, [
-            (5000, 5002, 1, 2, ('a.py', 5)),
-            (400, 400, 1, 1, ('c.py', 578)),
-            (-66, 0, -1, 0, ('b.py', 1)),
-            (-7, 0, -1, 0, ('', 0)),
-            (0, 30, 0, 3, ('a.py', 2)),
-        ])
-
-    def test_snapshot_top_by_file(self):
-        snapshot, snapshot2 = create_snapshots()
-
-        # stats per file
-        top_stats = snapshot.top_by('filename')
-        self.assertEqual(top_stats.stats, {
-            'a.py': (32, 4),
-            'b.py': (66, 1),
-            None: (7, 1),
-        })
-        self.assertEqual(top_stats.group_by, 'filename')
-        self.assertEqual(top_stats.timestamp, snapshot.timestamp)
-        self.assertEqual(top_stats.cumulative, False)
-        self.assertEqual(top_stats.metrics, snapshot.metrics)
-
-        # stats per file (2)
-        top_stats2 = snapshot2.top_by('filename')
-        self.assertEqual(top_stats2.stats, {
-            'a.py': (5032, 5),
-            'c.py': (400, 1),
-        })
-        self.assertEqual(top_stats2.group_by, 'filename')
-        self.assertEqual(top_stats2.timestamp, snapshot2.timestamp)
-        self.assertEqual(top_stats2.cumulative, False)
-        self.assertEqual(top_stats2.metrics, snapshot2.metrics)
-
-        # stats diff per file
-        top_diff = top_stats2.compare_to(top_stats)
-        self.assertIsInstance(top_diff, tracemalloc.StatsDiff)
-        top_diff.sort()
-        self.assertEqual(top_diff.differences, [
-            (5000, 5032, 1, 5, 'a.py'),
-            (400, 400, 1, 1, 'c.py'),
-            (-66, 0, -1, 0, 'b.py'),
-            (-7, 0, -1, 0, ''),
-        ])
-
-    def test_snapshot_top_by_address(self):
-        snapshot, snapshot2 = create_snapshots()
-
-        # stats per address
-        top_stats = snapshot.top_by('address')
-        self.assertEqual(top_stats.stats, {
-            0x10001: (10, 1),
-            0x10002: (10, 1),
-            0x10003: (10, 1),
-            0x20001: (2, 1),
-            0x30001: (66, 1),
-            0x40001: (7, 1),
-        })
-        self.assertEqual(top_stats.group_by, 'address')
-        self.assertEqual(top_stats.timestamp, snapshot.timestamp)
-        self.assertEqual(top_stats.cumulative, False)
-        self.assertEqual(top_stats.metrics, snapshot.metrics)
-
-        # stats per address (2)
-        top_stats2 = snapshot2.top_by('address')
-        self.assertEqual(top_stats2.stats, {
-            0x10001: (10, 1),
-            0x10002: (10, 1),
-            0x10003: (10, 1),
-            0x20001: (2, 1),
-            0x20002: (5000, 1),
-            0x30001: (400, 1),
-        })
-        self.assertEqual(top_stats2.group_by, 'address')
-        self.assertEqual(top_stats2.timestamp, snapshot2.timestamp)
-        self.assertEqual(top_stats2.cumulative, False)
-        self.assertEqual(top_stats2.metrics, snapshot2.metrics)
-
-        # diff
-        top_diff = top_stats2.compare_to(top_stats)
-        self.assertIsInstance(top_diff, tracemalloc.StatsDiff)
-        top_diff.sort()
-        self.assertEqual(top_diff.differences, [
-            (5000, 5000, 1, 1, 0x20002),
-            (334, 400, 0, 1, 0x30001),
-            (-7, 0, -1, 0, 0x40001),
-            (0, 10, 0, 1, 0x10003),
-            (0, 10, 0, 1, 0x10002),
-            (0, 10, 0, 1, 0x10001),
-            (0, 2, 0, 1, 0x20001),
-        ])
-
-        with self.assertRaises(ValueError) as cm:
-            snapshot.traces = None
-            snapshot.top_by('address')
-        self.assertEqual(str(cm.exception), "need traces")
-
-    def test_snapshot_top_cumulative(self):
-        snapshot, snapshot2 = create_snapshots()
-
-        # per file
-        top_stats = snapshot.top_by('filename', True)
-        self.assertEqual(top_stats.stats, {
-            'a.py': (32, 4),
-            'b.py': (98, 5),
-            None: (7, 1),
-        })
-        self.assertEqual(top_stats.group_by, 'filename')
-        self.assertEqual(top_stats.timestamp, snapshot.timestamp)
-        self.assertEqual(top_stats.cumulative, True)
-        self.assertEqual(top_stats.metrics, snapshot.metrics)
-
-        # per line
-        top_stats2 = snapshot.top_by('line', True)
-        self.assertEqual(top_stats2.stats, {
-            ('a.py', 2): (30, 3),
-            ('a.py', 5): (2, 1),
-            ('b.py', 1): (66, 1),
-            ('b.py', 4): (32, 4),
-            (None, None): (7, 1),
-        })
-        self.assertEqual(top_stats2.group_by, 'line')
-        self.assertEqual(top_stats2.timestamp, snapshot.timestamp)
-        self.assertEqual(top_stats2.cumulative, True)
-        self.assertEqual(top_stats2.metrics, snapshot.metrics)
-
-        with self.assertRaises(ValueError) as cm:
-            snapshot.traces = None
-            snapshot.top_by('filename', True)
-        self.assertEqual(str(cm.exception), "need traces")
-
     def test_display_top_by_line(self):
         snapshot, snapshot2 = create_snapshots()
 
@@ -507,8 +336,9 @@ Traced Python memory: 105 B
         # top per file (default options)
         output = io.StringIO()
         top = tracemalloctext.DisplayTop()
+        top.metrics = False
 
-        with patch.object(tracemalloc.Snapshot,
+        with patch.object(tracemalloctext.tracemalloc.Snapshot,
                           'create', return_value=snapshot):
             top.display(2, group_by='filename', file=output, callback=callback)
         text = output.getvalue()
